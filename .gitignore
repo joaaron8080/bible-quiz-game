@@ -1,0 +1,19 @@
+# fable5 오케스트레이터 내부 파일 (커밋 제외)
+.fable/
+logs/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+dist/
+*.log
+
+# 환경 변수
+.env
+.env.local
+.env*.local
+
+# OS
+.DS_Store
+Thumbs.db

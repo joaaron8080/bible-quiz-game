@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #FDF8EE; /* cream primary */
+  --foreground: #3D2B1F; /* dark brown */
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  min-height: 100vh;
+}
+
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+@layer components {
+  .primary-button {
+    @apply inline-flex min-h-12 items-center justify-center rounded-md border border-gold bg-gold px-5 py-3 text-base font-extrabold text-white shadow-sm transition hover:bg-gold-light active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .secondary-button {
+    @apply inline-flex min-h-12 items-center justify-center rounded-md border border-gold/35 bg-white/55 px-5 py-3 text-base font-extrabold text-brown-dark shadow-sm transition hover:bg-cream-dark active:scale-[0.98];
+  }
+
+  .answer-button {
+    @apply flex min-h-16 w-full items-center gap-4 rounded-lg border border-gold/25 bg-white/70 px-4 py-4 text-left text-lg font-bold shadow-sm transition hover:border-gold hover:bg-white active:scale-[0.99];
+  }
+
+  .answer-button span {
+    @apply grid h-9 w-9 shrink-0 place-items-center rounded-full bg-cream-dark text-sm font-black text-gold;
+  }
+}

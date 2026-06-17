@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__figma__get_figma_data",
+      "mcp__figma__download_figma_images",
+      "mcp__f67b05c9-87e0-4ab4-84b6-b754ee8ca8b0__get_design_context",
+      "mcp__f67b05c9-87e0-4ab4-84b6-b754ee8ca8b0__get_metadata",
+      "mcp__plugin_figma_figma__get_screenshot",
+      "mcp__plugin_figma_figma__get_design_context",
+      "mcp__plugin_figma_figma__get_metadata",
+      "mcp__computer-use__screenshot",
+      "mcp__Claude_in_Chrome__tabs_context_mcp"
+    ]
+  }
+}
