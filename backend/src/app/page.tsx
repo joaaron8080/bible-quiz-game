@@ -11,6 +11,7 @@ import {
   levelMeta,
   loadProgress,
   plannedQuizModes,
+  progressQuizModes,
   resetProgress,
   releasedQuizModes,
   saveProgress,
@@ -89,7 +90,7 @@ export default function Home() {
       return;
     }
 
-    if (session.mode === "multiple_choice" || session.mode === "true_false") {
+    if (progressQuizModes.includes(session.mode)) {
       const next = completeLevel(progress, session.level);
       setProgress(next);
       saveProgress(next, window.localStorage);
@@ -104,7 +105,7 @@ export default function Home() {
   }
 
   function nextLevel() {
-    if (!["multiple_choice", "true_false"].includes(session.mode) || session.level >= TOTAL_LEVELS) {
+    if (!progressQuizModes.includes(session.mode) || session.level >= TOTAL_LEVELS) {
       setSession(goHome(session));
       return;
     }
@@ -191,14 +192,16 @@ export default function Home() {
                   ))}
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {plannedQuizModes.map((mode) => (
-                    <span
-                      className="rounded-full border border-brown-dark/10 bg-white/35 px-3 py-1 text-xs font-bold text-brown-dark/55"
-                      key={mode.id}
-                    >
-                      {mode.label} planned
-                    </span>
-                  ))}
+                  {plannedQuizModes
+                    .filter((mode) => !releasedQuizModes.some((releasedMode) => releasedMode.id === mode.id))
+                    .map((mode) => (
+                      <span
+                        className="rounded-full border border-brown-dark/10 bg-white/35 px-3 py-1 text-xs font-bold text-brown-dark/55"
+                        key={mode.id}
+                      >
+                        {mode.label} planned
+                      </span>
+                    ))}
                 </div>
               </div>
               <ProgressBar percent={stats.percent} label={`전체 진행률 ${stats.percent}%`} />
@@ -324,7 +327,7 @@ export default function Home() {
                 : `${session.level + 1}단계에서 더 깊은 성경 지식을 확인해 보세요.`}
             </p>
             <button className="primary-button" onClick={nextLevel}>
-              {!["multiple_choice", "true_false"].includes(session.mode) || session.level === TOTAL_LEVELS ? "홈으로 이동" : "다음 단계"}
+              {!progressQuizModes.includes(session.mode) || session.level === TOTAL_LEVELS ? "홈으로 이동" : "다음 단계"}
             </button>
           </CenteredPanel>
         )}
@@ -372,9 +375,79 @@ function QuestionAnswerControls({
     return <FillBlankAnswer onAnswer={onAnswer} />;
   }
 
+  if (question.type === "ordering") {
+    return <OrderingAnswer question={question} onAnswer={onAnswer} />;
+  }
+
   return (
     <div className="rounded-lg border border-gold/25 bg-white/70 p-5 text-center text-sm font-bold text-brown-dark/65">
       이 모드는 다음 릴리스에서 플레이할 수 있습니다.
+    </div>
+  );
+}
+
+function OrderingAnswer({
+  question,
+  onAnswer,
+}: {
+  question: Extract<Question, { type: "ordering" }>;
+  onAnswer: (answer: SubmittedAnswer) => void;
+}) {
+  const [items, setItems] = useState(question.payload.items);
+
+  useEffect(() => {
+    setItems(question.payload.items);
+  }, [question.id, question.payload.items]);
+
+  function moveItem(index: number, direction: -1 | 1) {
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= items.length) return;
+
+    setItems((current) => {
+      const next = [...current];
+      [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+      return next;
+    });
+  }
+
+  return (
+    <div className="grid gap-4">
+      <ol className="grid gap-3">
+        {items.map((item, index) => (
+          <li
+            className="grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-lg border border-gold/25 bg-white/75 px-3 py-3 shadow-sm sm:px-4"
+            key={`${question.id}-${item}`}
+          >
+            <span className="grid h-9 w-9 place-items-center rounded-full bg-cream-dark text-sm font-black text-gold">
+              {index + 1}
+            </span>
+            <span className="text-base font-bold leading-6 sm:text-lg">{item}</span>
+            <span className="flex gap-2">
+              <button
+                aria-label={`Move ${item} up`}
+                className="grid h-11 w-11 place-items-center rounded-md border border-gold/30 bg-white text-lg font-black text-brown-dark transition hover:bg-cream-dark disabled:cursor-not-allowed disabled:opacity-35"
+                disabled={index === 0}
+                onClick={() => moveItem(index, -1)}
+                type="button"
+              >
+                U
+              </button>
+              <button
+                aria-label={`Move ${item} down`}
+                className="grid h-11 w-11 place-items-center rounded-md border border-gold/30 bg-white text-lg font-black text-brown-dark transition hover:bg-cream-dark disabled:cursor-not-allowed disabled:opacity-35"
+                disabled={index === items.length - 1}
+                onClick={() => moveItem(index, 1)}
+                type="button"
+              >
+                D
+              </button>
+            </span>
+          </li>
+        ))}
+      </ol>
+      <button className="primary-button w-full" onClick={() => onAnswer(items)} type="button">
+        제출
+      </button>
     </div>
   );
 }

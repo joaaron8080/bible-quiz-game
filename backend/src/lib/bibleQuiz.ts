@@ -111,7 +111,14 @@ export const releasedQuizModes: Array<{ id: QuizMode; label: string; description
     label: "Fill Blank",
     description: "핵심 답을 직접 입력하며 암송 감각을 익힙니다.",
   },
+  {
+    id: "ordering",
+    label: "Ordering Quiz",
+    description: "Arrange Bible events in the correct flow.",
+  },
 ];
+
+export const progressQuizModes: QuizMode[] = ["multiple_choice", "true_false", "ordering"];
 
 export const plannedQuizModes: Array<{ id: QuizMode; label: string; description: string }> = [
   {

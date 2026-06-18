@@ -51,6 +51,17 @@ describe("bible quiz logic", () => {
     );
   });
 
+  it("exposes Ordering Quiz as a released selectable mode", () => {
+    expect(releasedQuizModes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "ordering",
+          label: "Ordering Quiz",
+        }),
+      ]),
+    );
+  });
+
   it("avoids repeating variants from the same fact in one run", () => {
     const selected = pickRandomQuestions(questionBank, 1, 10, () => 0.42);
     const factIds = new Set(selected.map((question) => question.id.replace(/-\d+$/, "")));
@@ -142,11 +153,22 @@ describe("bible quiz logic", () => {
   it("picks released non-classic mode questions end to end", () => {
     const oxQuestions = pickRandomQuestions(questionBank, 1, 10, () => 0.42, "true_false");
     const fillBlankQuestions = pickRandomQuestions(questionBank, 1, 10, () => 0.42, "fill_blank");
+    const orderingQuestions = pickRandomQuestions(questionBank, 1, 10, () => 0.42, "ordering");
 
     expect(oxQuestions).toHaveLength(10);
     expect(fillBlankQuestions).toHaveLength(10);
+    expect(orderingQuestions).toHaveLength(10);
     expect(oxQuestions.every((question) => question.type === "true_false")).toBe(true);
     expect(fillBlankQuestions.every((question) => question.type === "fill_blank")).toBe(true);
+    expect(orderingQuestions.every((question) => question.type === "ordering")).toBe(true);
+  });
+
+  it("evaluates correct and incorrect ordering submissions", () => {
+    const ordering = questionBank.find((question) => question.type === "ordering" && question.level === 1);
+    if (!ordering || ordering.type !== "ordering") throw new Error("Expected ordering question");
+
+    expect(evaluateAnswer(ordering, ordering.answer.order)).toBe(true);
+    expect(evaluateAnswer(ordering, [...ordering.answer.order].reverse())).toBe(false);
   });
 
   it("saves completed level progress", () => {

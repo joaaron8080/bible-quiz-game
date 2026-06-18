@@ -134,6 +134,43 @@ describe("game session logic", () => {
     expect(result.session.score).toBe(1);
   });
 
+  it("scores correct and incorrect ordering quiz submissions", () => {
+    const session = showQuestion(startLevelSession(1, questionBank, () => 0.42, "ordering"));
+    const currentQuestion = session.questions[0];
+    if (currentQuestion.type !== "ordering") throw new Error("Expected ordering question");
+
+    const correct = answerCurrentQuestion(session, currentQuestion.answer.order);
+    const incorrect = answerCurrentQuestion(session, [...currentQuestion.answer.order].reverse());
+
+    expect(session.mode).toBe("ordering");
+    expect(correct.correct).toBe(true);
+    expect(correct.session.score).toBe(1);
+    expect(correct.session.feedback?.answer).toBe(currentQuestion.answer.order.join(" > "));
+    expect(incorrect.correct).toBe(false);
+    expect(incorrect.session.score).toBe(0);
+  });
+
+  it("plays a full Ordering Quiz run through feedback and level result", () => {
+    let session = showQuestion(startLevelSession(1, questionBank, () => 0.42, "ordering"));
+
+    expect(session.questions).toHaveLength(QUESTIONS_PER_RUN);
+    expect(session.questions.every((question) => question.type === "ordering")).toBe(true);
+
+    for (let index = 0; index < QUESTIONS_PER_RUN; index += 1) {
+      const currentQuestion = session.questions[session.currentIndex];
+      if (currentQuestion.type !== "ordering") throw new Error("Expected ordering question");
+
+      const result = answerCurrentQuestion(session, currentQuestion.answer.order);
+      expect(result.correct).toBe(true);
+
+      session = continueAfterFeedback(result.session);
+    }
+
+    expect(session.screen).toBe("LEVEL_RESULT");
+    expect(session.score).toBe(QUESTIONS_PER_RUN);
+    expect(isSessionPassed(session)).toBe(true);
+  });
+
   it("restarts from level one when all levels are complete", () => {
     const progress = {
       highestLevel: 10,

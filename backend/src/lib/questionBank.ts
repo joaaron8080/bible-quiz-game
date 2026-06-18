@@ -1,4 +1,4 @@
-import type { Difficulty, FillBlankQuestion, MultipleChoiceQuestion, Question, TrueFalseQuestion } from "./bibleQuiz";
+import type { Difficulty, FillBlankQuestion, MultipleChoiceQuestion, OrderingQuestion, Question, TrueFalseQuestion } from "./bibleQuiz";
 
 type Fact = {
   topic: string;
@@ -149,6 +149,7 @@ export const questionBank: Question[] = Object.entries(levelFacts).flatMap(([lev
     ...buildQuestionSet(Number(level), item, index),
     ...buildTrueFalseSet(Number(level), item, index),
     createFillBlankQuestion(Number(level), item, index),
+    createOrderingQuestion(Number(level), facts, index),
   ]),
 );
 
@@ -261,6 +262,30 @@ function createFillBlankQuestion(level: number, fact: Fact, index: number): Fill
     },
     explanation: fact.explanation,
     reference: levelReferences[level][index],
+  };
+}
+
+function createOrderingQuestion(level: number, facts: Fact[], index: number): OrderingQuestion {
+  const windowSize = 4;
+  const startIndex = Math.min(index, Math.max(0, facts.length - windowSize));
+  const orderedFacts = facts.slice(startIndex, startIndex + windowSize);
+  const orderedItems = orderedFacts.map((item) => item.topic);
+
+  return {
+    id: `L${level}-${String(index + 1).padStart(2, "0")}-order-1`,
+    level,
+    type: "ordering",
+    category: orderedItems[0],
+    difficulty: getDifficulty(level),
+    question: "Arrange these Bible events in the correct order.",
+    payload: {
+      items: rotate(orderedItems, (index % (windowSize - 1)) + 1),
+    },
+    answer: {
+      order: orderedItems,
+    },
+    explanation: `The event flow is: ${orderedItems.join(" > ")}.`,
+    reference: orderedFacts.map((item) => levelReferences[level][facts.indexOf(item)]).join(", "),
   };
 }
 
