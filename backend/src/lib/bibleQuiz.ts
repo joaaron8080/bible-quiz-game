@@ -93,11 +93,12 @@ export const TOTAL_LEVELS = 10;
 export const QUESTIONS_PER_RUN = 10;
 export const PASSING_SCORE = 7;
 export const STORAGE_KEY = "bible-quiz-progress-v1";
+export const DEFAULT_QUIZ_MODE: QuizMode = "multiple_choice";
 
 export const releasedQuizModes: Array<{ id: QuizMode; label: string; description: string }> = [
   {
     id: "multiple_choice",
-    label: "Classic Level",
+    label: "Multiple Choice",
     description: "4지선다 10문제를 풀고 단계별 진행도를 올립니다.",
   },
   {

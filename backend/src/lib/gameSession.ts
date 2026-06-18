@@ -1,6 +1,7 @@
 import {
   QUESTIONS_PER_RUN,
   TOTAL_LEVELS,
+  DEFAULT_QUIZ_MODE,
   evaluateAnswer,
   getCorrectAnswerText,
   isLevelPassed,
@@ -37,7 +38,7 @@ export type AnswerResult = {
 
 export const defaultSession: GameSession = {
   screen: "HOME",
-  mode: "multiple_choice",
+  mode: DEFAULT_QUIZ_MODE,
   level: 1,
   questions: [],
   currentIndex: 0,
@@ -47,7 +48,7 @@ export const defaultSession: GameSession = {
 
 export function resumeSession(progress: GameProgress, questionBank: Question[], random = Math.random): GameSession {
   if (progress.highestLevel > 0 && progress.completedLevels.length < TOTAL_LEVELS) {
-    return startLevelSession(progress.currentLevel, questionBank, random, "multiple_choice");
+    return startLevelSession(progress.currentLevel, questionBank, random, DEFAULT_QUIZ_MODE);
   }
 
   return {
@@ -60,7 +61,7 @@ export function startNextProgressLevelSession(
   progress: GameProgress,
   questionBank: Question[],
   random = Math.random,
-  mode: QuizMode = "multiple_choice",
+  mode: QuizMode = DEFAULT_QUIZ_MODE,
 ): GameSession {
   const completedAll = progress.completedLevels.length === TOTAL_LEVELS;
   return startLevelSession(completedAll ? 1 : progress.currentLevel, questionBank, random, mode);
@@ -70,7 +71,7 @@ export function startLevelSession(
   level: number,
   questionBank: Question[],
   random = Math.random,
-  mode: QuizMode = "multiple_choice",
+  mode: QuizMode = DEFAULT_QUIZ_MODE,
 ): GameSession {
   const safeLevel = clampLevel(level);
 

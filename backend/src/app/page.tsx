@@ -5,6 +5,7 @@ import {
   GameProgress,
   QUESTIONS_PER_RUN,
   TOTAL_LEVELS,
+  DEFAULT_QUIZ_MODE,
   completeLevel,
   defaultProgress,
   levelMeta,
@@ -36,7 +37,7 @@ import { sounds } from "@/lib/sounds";
 export default function Home() {
   const [session, setSession] = useState(defaultSession);
   const [progress, setProgress] = useState<GameProgress>(defaultProgress);
-  const [selectedMode, setSelectedMode] = useState<QuizMode>("multiple_choice");
+  const [selectedMode, setSelectedMode] = useState<QuizMode>(DEFAULT_QUIZ_MODE);
   const [hydrated, setHydrated] = useState(false);
 
   const meta = levelMeta[session.level - 1];
@@ -173,10 +174,18 @@ export default function Home() {
                           ? "border-gold bg-white/80"
                           : "border-gold/20 bg-white/35 hover:bg-white/60"
                       }`}
+                      aria-pressed={selectedMode === mode.id}
                       key={mode.id}
                       onClick={() => setSelectedMode(mode.id)}
                     >
-                      <span className="block font-serif text-lg font-bold">{mode.label}</span>
+                      <span className="flex items-center justify-between gap-3 font-serif text-lg font-bold">
+                        {mode.label}
+                        {selectedMode === mode.id && (
+                          <span className="rounded-full bg-gold px-2 py-1 text-xs font-black uppercase text-white">
+                            Active
+                          </span>
+                        )}
+                      </span>
                       <span className="mt-1 block text-sm leading-6 text-brown-dark/65">{mode.description}</span>
                     </button>
                   ))}

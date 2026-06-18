@@ -1,4 +1,4 @@
-import { QUESTIONS_PER_RUN, completeLevel, defaultProgress } from "../bibleQuiz";
+import { DEFAULT_QUIZ_MODE, QUESTIONS_PER_RUN, completeLevel, defaultProgress } from "../bibleQuiz";
 import {
   answerCurrentQuestion,
   continueAfterFeedback,
@@ -14,11 +14,24 @@ describe("game session logic", () => {
     const session = startLevelSession(2, questionBank, () => 0.42);
 
     expect(session.screen).toBe("LEVEL_INTRO");
+    expect(session.mode).toBe(DEFAULT_QUIZ_MODE);
     expect(session.level).toBe(2);
     expect(session.questions).toHaveLength(QUESTIONS_PER_RUN);
+    expect(session.questions.every((question) => question.type === "multiple_choice")).toBe(true);
     expect(session.currentIndex).toBe(0);
     expect(session.score).toBe(0);
     expect(session.feedback).toBeNull();
+  });
+
+  it("retains the selected Multiple Choice mode through session start and question rendering", () => {
+    const session = showQuestion(startNextProgressLevelSession(defaultProgress, questionBank, () => 0.42, "multiple_choice"));
+    const currentQuestion = session.questions[session.currentIndex];
+
+    expect(session.mode).toBe("multiple_choice");
+    expect(session.screen).toBe("QUESTION");
+    expect(currentQuestion.type).toBe("multiple_choice");
+    if (currentQuestion.type !== "multiple_choice") throw new Error("Expected multiple choice question");
+    expect(currentQuestion.payload.choices).toHaveLength(4);
   });
 
   it("answers the current question and exposes feedback", () => {
