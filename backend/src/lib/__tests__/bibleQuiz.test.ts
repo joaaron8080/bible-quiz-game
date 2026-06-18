@@ -62,6 +62,17 @@ describe("bible quiz logic", () => {
     );
   });
 
+  it("exposes Matching Quiz as a released selectable mode", () => {
+    expect(releasedQuizModes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "matching",
+          label: "Matching Quiz",
+        }),
+      ]),
+    );
+  });
+
   it("avoids repeating variants from the same fact in one run", () => {
     const selected = pickRandomQuestions(questionBank, 1, 10, () => 0.42);
     const factIds = new Set(selected.map((question) => question.id.replace(/-\d+$/, "")));
@@ -154,13 +165,16 @@ describe("bible quiz logic", () => {
     const oxQuestions = pickRandomQuestions(questionBank, 1, 10, () => 0.42, "true_false");
     const fillBlankQuestions = pickRandomQuestions(questionBank, 1, 10, () => 0.42, "fill_blank");
     const orderingQuestions = pickRandomQuestions(questionBank, 1, 10, () => 0.42, "ordering");
+    const matchingQuestions = pickRandomQuestions(questionBank, 1, 10, () => 0.42, "matching");
 
     expect(oxQuestions).toHaveLength(10);
     expect(fillBlankQuestions).toHaveLength(10);
     expect(orderingQuestions).toHaveLength(10);
+    expect(matchingQuestions).toHaveLength(10);
     expect(oxQuestions.every((question) => question.type === "true_false")).toBe(true);
     expect(fillBlankQuestions.every((question) => question.type === "fill_blank")).toBe(true);
     expect(orderingQuestions.every((question) => question.type === "ordering")).toBe(true);
+    expect(matchingQuestions.every((question) => question.type === "matching")).toBe(true);
   });
 
   it("evaluates correct and incorrect ordering submissions", () => {
@@ -169,6 +183,23 @@ describe("bible quiz logic", () => {
 
     expect(evaluateAnswer(ordering, ordering.answer.order)).toBe(true);
     expect(evaluateAnswer(ordering, [...ordering.answer.order].reverse())).toBe(false);
+  });
+
+  it("evaluates complete matching submissions and rejects mismatches", () => {
+    const matching = questionBank.find((question) => question.type === "matching" && question.level === 1);
+    if (!matching || matching.type !== "matching") throw new Error("Expected matching question");
+
+    const mismatchedPairs = matching.answer.pairs.map((pair, index, pairs) => ({
+      left: pair.left,
+      right: pairs[(index + 1) % pairs.length].right,
+    }));
+    const partialPairs = matching.answer.pairs.slice(0, matching.answer.pairs.length - 1);
+
+    expect(matching.payload.pairs).toHaveLength(4);
+    expect(evaluateAnswer(matching, matching.answer.pairs)).toBe(true);
+    expect(evaluateAnswer(matching, Object.fromEntries(matching.answer.pairs.map((pair) => [pair.left, pair.right])))).toBe(true);
+    expect(evaluateAnswer(matching, mismatchedPairs)).toBe(false);
+    expect(evaluateAnswer(matching, partialPairs)).toBe(false);
   });
 
   it("saves completed level progress", () => {

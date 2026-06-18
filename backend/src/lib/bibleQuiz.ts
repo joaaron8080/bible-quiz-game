@@ -116,9 +116,14 @@ export const releasedQuizModes: Array<{ id: QuizMode; label: string; description
     label: "Ordering Quiz",
     description: "Arrange Bible events in the correct flow.",
   },
+  {
+    id: "matching",
+    label: "Matching Quiz",
+    description: "Connect Bible people and events into the correct pairs.",
+  },
 ];
 
-export const progressQuizModes: QuizMode[] = ["multiple_choice", "true_false", "ordering"];
+export const progressQuizModes: QuizMode[] = ["multiple_choice", "true_false", "ordering", "matching"];
 
 export const plannedQuizModes: Array<{ id: QuizMode; label: string; description: string }> = [
   {
@@ -328,7 +333,11 @@ function isMatchingAnswer(value: SubmittedAnswer): value is Record<string, strin
     );
   }
 
-  return Boolean(value && typeof value === "object");
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      Object.entries(value).every(([left, right]) => typeof left === "string" && typeof right === "string"),
+  );
 }
 
 function matchingEqual(submitted: Record<string, string> | Array<{ left: string; right: string }>, expected: Array<{ left: string; right: string }>) {
@@ -337,7 +346,10 @@ function matchingEqual(submitted: Record<string, string> | Array<{ left: string;
     : Object.entries(submitted).map(([left, right]) => ({ left, right }));
   const submittedMap = new Map(submittedPairs.map((pair) => [normalizeText(pair.left), normalizeText(pair.right)]));
 
-  return expected.every((pair) => submittedMap.get(normalizeText(pair.left)) === normalizeText(pair.right));
+  return (
+    submittedPairs.length === expected.length &&
+    expected.every((pair) => submittedMap.get(normalizeText(pair.left)) === normalizeText(pair.right))
+  );
 }
 
 export function completeLevel(progress: GameProgress, level: number): GameProgress {

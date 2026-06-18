@@ -10,7 +10,13 @@ set -uo pipefail
 # 이 스크립트에서 정상 동작이며, -e 가 있으면 그때마다 전체가 종료됨.
 
 # ── 설정 ────────────────────────────────────────────────────
+# decompose(PRD 분해)는 품질 위해 Opus 유지
 ORCHESTRATOR="claude --model claude-opus-4-8 -p"
+# review/classify 는 경량 판정 → Haiku 로 토큰비용 절감
+REVIEWER="claude --model claude-haiku-4-5 -p"
+# 동일 issue rework 횟수 상한 (초과 시 무한 Opus/Haiku 재리뷰 차단)
+REWORK_LIMIT=3
+REWORK_DIR=".fable/rework"
 # Python 실행 명령: Windows Git Bash는 보통 'python', Mac/Linux는 'python3'
 # 환경에 맞는 것을 자동 감지
 if command -v python &>/dev/null && python -c "import sys" &>/dev/null; then
@@ -44,7 +50,7 @@ log() {
 
 # ── 디렉토리 초기화 ──────────────────────────────────────────
 init_dirs() {
-  mkdir -p .fable/{issues,queue,done,archive}
+  mkdir -p .fable/{issues,queue,done,archive,rework}
   mkdir -p logs
   log "📁 디렉토리 구조 초기화 완료"
 }
@@ -281,7 +287,7 @@ classify_unassigned_issues() {
   unassigned_files=$(grep -rl "^type: unassigned" "$ISSUES_DIR" 2>/dev/null || true)
   [ -z "$unassigned_files" ] && return
 
-  log "🤖 unassigned Issue 자동 분류 중 (Opus 4.8)..."
+  log "🤖 unassigned Issue 자동 분류 중 (Haiku)..."
 
   for issue_file in $unassigned_files; do
     [ -f "$issue_file" ] || continue
@@ -289,7 +295,7 @@ classify_unassigned_issues() {
     issue_name=$(basename "$issue_file")
 
     local result
-    result=$($ORCHESTRATOR \
+    result=$($REVIEWER \
       "다음 Issue가 Frontend 작업인지 Backend 작업인지 판단해줘.
 PRD를 참고해서 'Frontend' 또는 'Backend' 단어 하나만 응답해줘. 다른 텍스트 없이.
 
@@ -433,13 +439,12 @@ review_done_issues() {
 
     log "🔎 리뷰 중: $issue_name"
 
+    # PRD 전체 미동봉: acceptance criteria 는 done 보고서(원본 태스크)에 이미 포함
     local review_result
-    review_result=$($ORCHESTRATOR \
+    review_result=$($REVIEWER \
       "
 완료된 Issue 결과를 리뷰하고 JSON으로만 응답해줘 (다른 텍스트 없이).
-
-PRD:
-$(cat "$PRD_FILE")
+원본 태스크의 acceptance criteria 충족 여부로 판단.
 
 완료된 Issue:
 $(cat "$done_file")
@@ -478,10 +483,25 @@ except Exception as e:
     if [ "$approved" = "true" ]; then
       close_github_issue "$done_file"
       mv "$done_file" "$ARCHIVE_DIR/$canonical_name"
+      rm -f "$REWORK_DIR/${canonical_id}"
       log "  ✅ $issue_name 승인 → archive/$canonical_name"
     else
-      log "  🔄 $issue_name 재작업 필요 → issues 복귀 ($canonical_name)"
-      mv "$done_file" "$ISSUES_DIR/$canonical_name"
+      # rework 횟수 누적: 상한 초과 시 무한 재리뷰 차단
+      local rework_file rework_n
+      rework_file="$REWORK_DIR/${canonical_id}"
+      rework_n=$(cat "$rework_file" 2>/dev/null || echo 0)
+      rework_n=$((rework_n + 1))
+      echo "$rework_n" > "$rework_file"
+
+      if [ "$rework_n" -ge "$REWORK_LIMIT" ]; then
+        # GitHub close 안 함: 실제 미완료 → open 유지해 수동 점검 플래그
+        mv "$done_file" "$ARCHIVE_DIR/$canonical_name"
+        rm -f "$rework_file"
+        log "  ⛔ $issue_name rework ${rework_n}회 도달(상한 $REWORK_LIMIT) → 루프 이탈 archive (GitHub open 유지, 수동 점검 필요)"
+      else
+        log "  🔄 $issue_name 재작업(${rework_n}/$REWORK_LIMIT) → issues 복귀 ($canonical_name)"
+        mv "$done_file" "$ISSUES_DIR/$canonical_name"
+      fi
     fi
   done
 }

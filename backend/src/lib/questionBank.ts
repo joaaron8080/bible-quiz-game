@@ -1,4 +1,12 @@
-import type { Difficulty, FillBlankQuestion, MultipleChoiceQuestion, OrderingQuestion, Question, TrueFalseQuestion } from "./bibleQuiz";
+import type {
+  Difficulty,
+  FillBlankQuestion,
+  MatchingQuestion,
+  MultipleChoiceQuestion,
+  OrderingQuestion,
+  Question,
+  TrueFalseQuestion,
+} from "./bibleQuiz";
 
 type Fact = {
   topic: string;
@@ -150,6 +158,7 @@ export const questionBank: Question[] = Object.entries(levelFacts).flatMap(([lev
     ...buildTrueFalseSet(Number(level), item, index),
     createFillBlankQuestion(Number(level), item, index),
     createOrderingQuestion(Number(level), facts, index),
+    createMatchingQuestion(Number(level), facts, index),
   ]),
 );
 
@@ -286,6 +295,37 @@ function createOrderingQuestion(level: number, facts: Fact[], index: number): Or
     },
     explanation: `The event flow is: ${orderedItems.join(" > ")}.`,
     reference: orderedFacts.map((item) => levelReferences[level][facts.indexOf(item)]).join(", "),
+  };
+}
+
+function createMatchingQuestion(level: number, facts: Fact[], index: number): MatchingQuestion {
+  const windowSize = 4;
+  const startIndex = Math.min(index, Math.max(0, facts.length - windowSize));
+  const selectedFacts = facts.slice(startIndex, startIndex + windowSize);
+  const answerPairs = selectedFacts.map((item) => ({ left: item.topic, right: item.answer }));
+  const rotatedAnswers = rotate(
+    answerPairs.map((pair) => pair.right),
+    (index % (windowSize - 1)) + 1,
+  );
+
+  return {
+    id: `L${level}-${String(index + 1).padStart(2, "0")}-match-1`,
+    level,
+    type: "matching",
+    category: selectedFacts[0].topic,
+    difficulty: getDifficulty(level),
+    question: "Match each Bible person or event with the correct description.",
+    payload: {
+      pairs: answerPairs.map((pair, pairIndex) => ({
+        left: pair.left,
+        right: rotatedAnswers[pairIndex],
+      })),
+    },
+    answer: {
+      pairs: answerPairs,
+    },
+    explanation: `The correct pairs are: ${answerPairs.map((pair) => `${pair.left}: ${pair.right}`).join(", ")}.`,
+    reference: selectedFacts.map((item) => levelReferences[level][facts.indexOf(item)]).join(", "),
   };
 }
 

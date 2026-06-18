@@ -171,6 +171,49 @@ describe("game session logic", () => {
     expect(isSessionPassed(session)).toBe(true);
   });
 
+  it("scores correct and incorrect matching quiz submissions", () => {
+    const session = showQuestion(startLevelSession(1, questionBank, () => 0.42, "matching"));
+    const currentQuestion = session.questions[0];
+    if (currentQuestion.type !== "matching") throw new Error("Expected matching question");
+
+    const mismatchedPairs = currentQuestion.answer.pairs.map((pair, index, pairs) => ({
+      left: pair.left,
+      right: pairs[(index + 1) % pairs.length].right,
+    }));
+    const correct = answerCurrentQuestion(session, currentQuestion.answer.pairs);
+    const incorrect = answerCurrentQuestion(session, mismatchedPairs);
+
+    expect(session.mode).toBe("matching");
+    expect(correct.correct).toBe(true);
+    expect(correct.session.score).toBe(1);
+    expect(correct.session.feedback?.answer).toBe(
+      currentQuestion.answer.pairs.map((pair) => `${pair.left}: ${pair.right}`).join(", "),
+    );
+    expect(incorrect.correct).toBe(false);
+    expect(incorrect.session.score).toBe(0);
+  });
+
+  it("plays a full Matching Quiz run through feedback and level result", () => {
+    let session = showQuestion(startLevelSession(1, questionBank, () => 0.42, "matching"));
+
+    expect(session.questions).toHaveLength(QUESTIONS_PER_RUN);
+    expect(session.questions.every((question) => question.type === "matching")).toBe(true);
+
+    for (let index = 0; index < QUESTIONS_PER_RUN; index += 1) {
+      const currentQuestion = session.questions[session.currentIndex];
+      if (currentQuestion.type !== "matching") throw new Error("Expected matching question");
+
+      const result = answerCurrentQuestion(session, currentQuestion.answer.pairs);
+      expect(result.correct).toBe(true);
+
+      session = continueAfterFeedback(result.session);
+    }
+
+    expect(session.screen).toBe("LEVEL_RESULT");
+    expect(session.score).toBe(QUESTIONS_PER_RUN);
+    expect(isSessionPassed(session)).toBe(true);
+  });
+
   it("restarts from level one when all levels are complete", () => {
     const progress = {
       highestLevel: 10,

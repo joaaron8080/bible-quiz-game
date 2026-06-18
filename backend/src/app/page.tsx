@@ -379,9 +379,152 @@ function QuestionAnswerControls({
     return <OrderingAnswer question={question} onAnswer={onAnswer} />;
   }
 
+  if (question.type === "matching") {
+    return <MatchingAnswer question={question} onAnswer={onAnswer} />;
+  }
+
   return (
     <div className="rounded-lg border border-gold/25 bg-white/70 p-5 text-center text-sm font-bold text-brown-dark/65">
       이 모드는 다음 릴리스에서 플레이할 수 있습니다.
+    </div>
+  );
+}
+
+function MatchingAnswer({
+  question,
+  onAnswer,
+}: {
+  question: Extract<Question, { type: "matching" }>;
+  onAnswer: (answer: SubmittedAnswer) => void;
+}) {
+  const leftItems = question.payload.pairs.map((pair) => pair.left);
+  const rightItems = question.payload.pairs.map((pair) => pair.right);
+  const [matches, setMatches] = useState<Record<string, string>>({});
+  const [selectedLeft, setSelectedLeft] = useState<string | null>(null);
+  const [selectedRight, setSelectedRight] = useState<string | null>(null);
+
+  useEffect(() => {
+    setMatches({});
+    setSelectedLeft(null);
+    setSelectedRight(null);
+  }, [question.id]);
+
+  function pairItems(left: string, right: string) {
+    setMatches((current) => {
+      const next = Object.fromEntries(
+        Object.entries(current).filter(([existingLeft, existingRight]) => existingLeft !== left && existingRight !== right),
+      );
+      next[left] = right;
+      return next;
+    });
+    setSelectedLeft(null);
+    setSelectedRight(null);
+  }
+
+  function chooseLeft(left: string) {
+    if (selectedRight) {
+      pairItems(left, selectedRight);
+      return;
+    }
+
+    setSelectedLeft((current) => (current === left ? null : left));
+  }
+
+  function chooseRight(right: string) {
+    if (selectedLeft) {
+      pairItems(selectedLeft, right);
+      return;
+    }
+
+    setSelectedRight((current) => (current === right ? null : right));
+  }
+
+  function getRightOwner(right: string) {
+    return Object.entries(matches).find(([, matchedRight]) => matchedRight === right)?.[0];
+  }
+
+  const completedCount = Object.keys(matches).length;
+  const canSubmit = completedCount === leftItems.length;
+
+  return (
+    <div className="grid gap-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-2">
+          <p className="text-sm font-black uppercase text-brown-dark/55">Left</p>
+          {leftItems.map((left) => {
+            const selected = selectedLeft === left;
+            const pairedRight = matches[left];
+            return (
+              <button
+                aria-pressed={selected}
+                className={`min-h-16 rounded-lg border px-4 py-3 text-left font-bold shadow-sm transition ${
+                  selected
+                    ? "border-gold bg-gold text-white"
+                    : pairedRight
+                      ? "border-emerald-700/35 bg-emerald-50 text-brown-dark"
+                      : "border-gold/25 bg-white/75 hover:border-gold hover:bg-white"
+                }`}
+                key={`${question.id}-left-${left}`}
+                onClick={() => chooseLeft(left)}
+                type="button"
+              >
+                <span className="block text-base leading-6">{left}</span>
+                {pairedRight && <span className="mt-1 block text-xs font-bold opacity-75">Paired with {pairedRight}</span>}
+              </button>
+            );
+          })}
+        </div>
+        <div className="grid gap-2">
+          <p className="text-sm font-black uppercase text-brown-dark/55">Right</p>
+          {rightItems.map((right) => {
+            const selected = selectedRight === right;
+            const pairedLeft = getRightOwner(right);
+            return (
+              <button
+                aria-pressed={selected}
+                className={`min-h-16 rounded-lg border px-4 py-3 text-left font-bold shadow-sm transition ${
+                  selected
+                    ? "border-gold bg-gold text-white"
+                    : pairedLeft
+                      ? "border-emerald-700/35 bg-emerald-50 text-brown-dark"
+                      : "border-gold/25 bg-white/75 hover:border-gold hover:bg-white"
+                }`}
+                key={`${question.id}-right-${right}`}
+                onClick={() => chooseRight(right)}
+                type="button"
+              >
+                <span className="block text-base leading-6">{right}</span>
+                {pairedLeft && <span className="mt-1 block text-xs font-bold opacity-75">Paired with {pairedLeft}</span>}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm font-bold text-brown-dark/65">
+          {completedCount}/{leftItems.length} pairs connected
+        </p>
+        <button
+          className="secondary-button"
+          disabled={completedCount === 0}
+          onClick={() => {
+            setMatches({});
+            setSelectedLeft(null);
+            setSelectedRight(null);
+          }}
+          type="button"
+        >
+          Clear
+        </button>
+      </div>
+      <button
+        className="primary-button w-full"
+        disabled={!canSubmit}
+        onClick={() => onAnswer(Object.entries(matches).map(([left, right]) => ({ left, right })))}
+        type="button"
+      >
+        Submit
+      </button>
     </div>
   );
 }
