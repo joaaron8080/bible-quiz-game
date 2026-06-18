@@ -7,6 +7,7 @@ import {
   loadProgress,
   pickRandomQuestions,
   questionTypes,
+  releasedQuizModes,
   saveProgress,
   type Question,
 } from "../bibleQuiz";
@@ -39,6 +40,17 @@ describe("bible quiz logic", () => {
     ]);
   });
 
+  it("exposes OX Quiz as a released selectable mode", () => {
+    expect(releasedQuizModes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "true_false",
+          label: "OX Quiz",
+        }),
+      ]),
+    );
+  });
+
   it("avoids repeating variants from the same fact in one run", () => {
     const selected = pickRandomQuestions(questionBank, 1, 10, () => 0.42);
     const factIds = new Set(selected.map((question) => question.id.replace(/-\d+$/, "")));
@@ -60,21 +72,27 @@ describe("bible quiz logic", () => {
     expect(questionBank.find((question) => question.id === "L6-06-2")?.question).toContain("빌립과 에디오피아 내시와");
   });
 
-  it("evaluates multiple choice, OX, and fill blank answers", () => {
+  it("evaluates multiple choice, OX true and false, and fill blank answers", () => {
     const multipleChoice = questionBank.find((question) => question.id === "L1-01-1");
-    const trueFalse = questionBank.find((question) => question.id === "L1-01-tf-1");
+    const trueAnswer = questionBank.find((question) => question.id === "L1-01-tf-1");
+    const falseAnswer = questionBank.find((question) => question.id === "L1-01-tf-2");
     const fillBlank = questionBank.find((question) => question.id === "L1-01-blank-1");
 
     expect(multipleChoice?.type).toBe("multiple_choice");
-    expect(trueFalse?.type).toBe("true_false");
+    expect(trueAnswer?.type).toBe("true_false");
+    expect(falseAnswer?.type).toBe("true_false");
     expect(fillBlank?.type).toBe("fill_blank");
 
     if (!multipleChoice || multipleChoice.type !== "multiple_choice") throw new Error("Expected multiple choice");
-    if (!trueFalse || trueFalse.type !== "true_false") throw new Error("Expected OX");
+    if (!trueAnswer || trueAnswer.type !== "true_false") throw new Error("Expected OX true question");
+    if (!falseAnswer || falseAnswer.type !== "true_false") throw new Error("Expected OX false question");
     if (!fillBlank || fillBlank.type !== "fill_blank") throw new Error("Expected fill blank");
 
     expect(multipleChoice && evaluateAnswer(multipleChoice, multipleChoice.answer.index)).toBe(true);
-    expect(trueFalse && evaluateAnswer(trueFalse, true)).toBe(true);
+    expect(evaluateAnswer(trueAnswer, true)).toBe(true);
+    expect(evaluateAnswer(trueAnswer, false)).toBe(false);
+    expect(evaluateAnswer(falseAnswer, false)).toBe(true);
+    expect(evaluateAnswer(falseAnswer, true)).toBe(false);
     expect(fillBlank && evaluateAnswer(fillBlank, ` ${fillBlank.answer.text} `)).toBe(true);
   });
 

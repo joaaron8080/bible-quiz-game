@@ -26,8 +26,15 @@ ARCHIVE_DIR=".fable/archive"
 LOG_FILE="logs/fable5.log"
 STATE_FILE=".fable/state.json"
 
-MAX_ITERATIONS=50
+# MAX_ITERATIONS: 무한루프 최종 백스톱 (정상 종료는 stall 감지가 담당)
+MAX_ITERATIONS=100000
 LOOP_INTERVAL=15
+# STALL_LIMIT: 진행 없는 루프가 연속 이 횟수 도달하면 종료
+#   판정 지표: archive/issues/queue/done 개수 + agent 로그 크기 변화
+#   기본 80회 * 15초 = 20분간 무활동 시 deadlock 으로 간주
+STALL_LIMIT=80
+STALL_COUNT=0
+PREV_FINGERPRINT=""
 # ────────────────────────────────────────────────────────────
 
 log() {
@@ -119,12 +126,25 @@ with open('.fable/state.json', 'w') as f:
 "
 }
 
+# ── 진행 지표 지문: 변하면 작업 진행 중, 불변이면 stall ──────
+#   파일 개수(상태 전이) + agent 로그 크기(작업 활동)를 합산
+progress_fingerprint() {
+  local n_issues n_queue n_done n_archive codex_sz gemini_sz
+  n_issues=$(ls "$ISSUES_DIR"/*.md 2>/dev/null | wc -l)
+  n_queue=$(ls "$QUEUE_DIR"/*.md 2>/dev/null | wc -l)
+  n_done=$(ls "$DONE_DIR"/*.md 2>/dev/null | wc -l)
+  n_archive=$(ls "$ARCHIVE_DIR"/*.md 2>/dev/null | wc -l)
+  codex_sz=$(wc -c < "logs/codex.log" 2>/dev/null || echo 0)
+  gemini_sz=$(wc -c < "logs/gemini.log" 2>/dev/null || echo 0)
+  echo "${n_issues}-${n_queue}-${n_done}-${n_archive}-${codex_sz}-${gemini_sz}"
+}
+
 should_stop() {
   local iter
   iter=$(get_iteration)
 
   if [ "$iter" -ge "$MAX_ITERATIONS" ]; then
-    log "⛔ max_iterations($MAX_ITERATIONS) 도달 → 종료"
+    log "⛔ max_iterations($MAX_ITERATIONS) 최종 백스톱 도달 → 종료"
     return 0
   fi
 
@@ -138,6 +158,25 @@ should_stop() {
      [ "$pending_done" -eq 0 ]; then
     log "🎉 모든 Issue 완료 → 루프 종료"
     return 0
+  fi
+
+  # ── stall 감지: 진행 지표 불변이 STALL_LIMIT회 연속이면 deadlock ──
+  local fp
+  fp=$(progress_fingerprint)
+  if [ "$fp" = "$PREV_FINGERPRINT" ]; then
+    STALL_COUNT=$((STALL_COUNT + 1))
+    if [ "$STALL_COUNT" -ge "$STALL_LIMIT" ]; then
+      local mins=$((STALL_LIMIT * LOOP_INTERVAL / 60))
+      log "⛔ ${mins}분간 진행 없음(stall) → deadlock 판단, 종료 (남은 issue: ${remaining_issues}, 큐: ${queue_items})"
+      return 0
+    fi
+    log "  ⏸️  무진행 ${STALL_COUNT}/${STALL_LIMIT} (작업 대기 또는 agent 처리 중)"
+  else
+    if [ "$STALL_COUNT" -gt 0 ]; then
+      log "  ▶️  진행 감지 → stall 카운터 리셋"
+    fi
+    STALL_COUNT=0
+    PREV_FINGERPRINT="$fp"
   fi
 
   return 1

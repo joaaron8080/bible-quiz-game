@@ -2,6 +2,7 @@ import { DEFAULT_QUIZ_MODE, QUESTIONS_PER_RUN, completeLevel, defaultProgress } 
 import {
   answerCurrentQuestion,
   continueAfterFeedback,
+  isSessionPassed,
   resumeSession,
   showQuestion,
   startLevelSession,
@@ -98,16 +99,27 @@ describe("game session logic", () => {
     expect(session.level).toBe(4);
   });
 
-  it("runs an OX quiz session", () => {
-    const session = showQuestion(startLevelSession(1, questionBank, () => 0.42, "true_false"));
-    const currentQuestion = session.questions[0];
-    if (currentQuestion.type !== "true_false") throw new Error("Expected OX question");
-
-    const result = answerCurrentQuestion(session, currentQuestion.answer.value);
+  it("plays a full OX Quiz run through feedback and level result", () => {
+    let session = showQuestion(startLevelSession(1, questionBank, () => 0.42, "true_false"));
 
     expect(session.mode).toBe("true_false");
-    expect(result.correct).toBe(true);
-    expect(result.session.feedback?.answer).toMatch(/O|X/);
+    expect(session.questions).toHaveLength(QUESTIONS_PER_RUN);
+    expect(session.questions.every((question) => question.type === "true_false")).toBe(true);
+
+    for (let index = 0; index < QUESTIONS_PER_RUN; index += 1) {
+      const currentQuestion = session.questions[session.currentIndex];
+      if (currentQuestion.type !== "true_false") throw new Error("Expected OX question");
+
+      const result = answerCurrentQuestion(session, currentQuestion.answer.value);
+      expect(result.correct).toBe(true);
+      expect(result.session.feedback?.answer).toBe(currentQuestion.answer.value ? "O" : "X");
+
+      session = continueAfterFeedback(result.session);
+    }
+
+    expect(session.screen).toBe("LEVEL_RESULT");
+    expect(session.score).toBe(QUESTIONS_PER_RUN);
+    expect(isSessionPassed(session)).toBe(true);
   });
 
   it("runs a fill blank quiz session", () => {

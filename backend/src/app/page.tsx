@@ -89,7 +89,7 @@ export default function Home() {
       return;
     }
 
-    if (session.mode === "multiple_choice") {
+    if (session.mode === "multiple_choice" || session.mode === "true_false") {
       const next = completeLevel(progress, session.level);
       setProgress(next);
       saveProgress(next, window.localStorage);
@@ -104,7 +104,7 @@ export default function Home() {
   }
 
   function nextLevel() {
-    if (session.mode !== "multiple_choice" || session.level >= TOTAL_LEVELS) {
+    if (!["multiple_choice", "true_false"].includes(session.mode) || session.level >= TOTAL_LEVELS) {
       setSession(goHome(session));
       return;
     }
@@ -324,7 +324,7 @@ export default function Home() {
                 : `${session.level + 1}단계에서 더 깊은 성경 지식을 확인해 보세요.`}
             </p>
             <button className="primary-button" onClick={nextLevel}>
-              {session.mode !== "multiple_choice" || session.level === TOTAL_LEVELS ? "홈으로 이동" : "다음 단계"}
+              {!["multiple_choice", "true_false"].includes(session.mode) || session.level === TOTAL_LEVELS ? "홈으로 이동" : "다음 단계"}
             </button>
           </CenteredPanel>
         )}
