@@ -31,6 +31,8 @@ DONE_DIR=".fable/done"
 ARCHIVE_DIR=".fable/archive"
 LOG_FILE="logs/fable5.log"
 STATE_FILE=".fable/state.json"
+# 완료 신호: worker(codex/gemini)가 감시해 graceful 종료
+DONE_FLAG=".fable/.pipeline_complete"
 
 # MAX_ITERATIONS: 무한루프 최종 백스톱 (정상 종료는 stall 감지가 담당)
 MAX_ITERATIONS=100000
@@ -52,6 +54,7 @@ log() {
 init_dirs() {
   mkdir -p .fable/{issues,queue,done,archive,rework}
   mkdir -p logs
+  rm -f "$DONE_FLAG"   # 이전 실행 완료신호 제거 (재시작 시 worker 오종료 방지)
   log "📁 디렉토리 구조 초기화 완료"
 }
 
@@ -563,6 +566,8 @@ main() {
     sleep "$LOOP_INTERVAL"
   done
 
+  touch "$DONE_FLAG"   # worker 들에게 종료 신호 전파
+  log "🏁 완료 신호 생성($DONE_FLAG) → worker 종료 유도"
   log "✅ 전체 프로젝트 완료!"
 }
 

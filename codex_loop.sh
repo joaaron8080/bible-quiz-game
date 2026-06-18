@@ -12,6 +12,11 @@ DONE_DIR=".fable/done"
 LOG_FILE="logs/codex.log"
 LOOP_INTERVAL=10
 AGENT_LABEL="[Codex/Frontend]"
+# fable5 종료 신호 파일 (있으면 worker 도 graceful 종료)
+DONE_FLAG=".fable/.pipeline_complete"
+# fable5 크래시 대비 백스톱: 연속 무작업 폴링 이 횟수 넘으면 종료
+#   기본 90 * 10초 = 15분간 큐 없으면 fable5 종료/사망으로 간주
+IDLE_LIMIT=90
 
 log() {
   local msg="[$(date '+%Y-%m-%d %H:%M:%S')] $AGENT_LABEL $1"
@@ -27,8 +32,17 @@ main() {
     exit 1
   fi
 
+  local idle_count=0
+
   while true; do
+    # 완료 신호 감지 → graceful 종료
+    if [ -f "$DONE_FLAG" ]; then
+      log "🏁 완료 신호 감지($DONE_FLAG) → Frontend Agent 종료"
+      break
+    fi
+
     if [ -f "$QUEUE_FILE" ]; then
+      idle_count=0
       local issue_id github_issue task_content timestamp done_file
       issue_id=$(grep "^id:" "$QUEUE_FILE" | awk '{print $2}' || echo "unknown")
       github_issue=$(grep "^github_issue:" "$QUEUE_FILE" | awk '{print $2}' || echo "")
@@ -103,11 +117,19 @@ EOF
       fi
 
     else
-      log "⬜ 대기 중 (큐 없음)..."
+      idle_count=$((idle_count + 1))
+      if [ "$idle_count" -ge "$IDLE_LIMIT" ]; then
+        local mins=$((IDLE_LIMIT * LOOP_INTERVAL / 60))
+        log "⛔ ${mins}분간 큐 없음 → fable5 종료/사망 간주, Frontend Agent 종료"
+        break
+      fi
+      log "⬜ 대기 중 (큐 없음) ${idle_count}/${IDLE_LIMIT}..."
     fi
 
     sleep "$LOOP_INTERVAL"
   done
+
+  log "👋 Frontend Agent 루프 종료"
 }
 
 main "$@"
