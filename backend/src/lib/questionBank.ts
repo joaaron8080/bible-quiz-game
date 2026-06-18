@@ -152,10 +152,32 @@ function buildQuestionSet(level: number, fact: Fact, index: number): Question[] 
   const baseId = `L${level}-${String(index + 1).padStart(2, "0")}`;
   const reference = levelReferences[level][index];
   return [
-    createQuestion(baseId, level, `${fact.clue}은(는) 무엇입니까?`, fact, reference, 0),
-    createQuestion(baseId, level, `${fact.topic}과 가장 직접 관련된 설명은 무엇입니까?`, fact, reference, 1),
+    createQuestion(baseId, level, `${fact.clue}은(는) ${getClueQuestionWord(fact.clue)}?`, fact, reference, 0),
+    createQuestion(baseId, level, `${fact.topic}${getAndParticle(fact.topic)} 가장 직접 관련된 설명은 무엇입니까?`, fact, reference, 1),
     createQuestion(baseId, level, `다음 중 ${fact.topic}에 대한 바른 답은 무엇입니까?`, fact, reference, 2),
   ];
+}
+
+function getClueQuestionWord(clue: string) {
+  return isPersonClue(clue) ? "누구입니까" : "무엇입니까";
+}
+
+function isPersonClue(clue: string) {
+  if (/핵심|중심|교훈|내용|결과|의미|주제|표징|행동|기간|장소|재료|직업/.test(clue)) return false;
+
+  return /분|사람|사람들|인물|인물들|왕|여인|여인들|선지자|사사|제자|종들|무리/.test(clue);
+}
+
+function getAndParticle(value: string) {
+  const lastChar = value.trim().at(-1);
+  if (!lastChar) return "과(와)";
+
+  const code = lastChar.charCodeAt(0);
+  const hangulStart = "가".charCodeAt(0);
+  const hangulEnd = "힣".charCodeAt(0);
+  if (code < hangulStart || code > hangulEnd) return "과(와)";
+
+  return (code - hangulStart) % 28 === 0 ? "와" : "과";
 }
 
 function createQuestion(baseId: string, level: number, question: string, fact: Fact, reference: string, variant: number): Question {

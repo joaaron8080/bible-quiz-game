@@ -7,43 +7,41 @@ import {
   TOTAL_LEVELS,
   completeLevel,
   defaultProgress,
-  isLevelPassed,
   levelMeta,
   loadProgress,
-  pickRandomQuestions,
   resetProgress,
   saveProgress,
-  type Question,
 } from "@/lib/bibleQuiz";
+import {
+  answerCurrentQuestion,
+  continueAfterFeedback,
+  defaultSession,
+  getCurrentQuestion,
+  goHome,
+  isSessionPassed,
+  resumeSession,
+  showCelebration,
+  showQuestion,
+  startLevelSession,
+  startNextProgressLevelSession,
+} from "@/lib/gameSession";
 import { questionBank } from "@/lib/questionBank";
 import { sounds } from "@/lib/sounds";
 
-type Screen = "HOME" | "LEVEL_INTRO" | "QUESTION" | "FEEDBACK" | "LEVEL_RESULT" | "CELEBRATION";
-type Feedback = { correct: boolean; answer: string; explanation: string; reference: string } | null;
-
 export default function Home() {
-  const [screen, setScreen] = useState<Screen>("HOME");
+  const [session, setSession] = useState(defaultSession);
   const [progress, setProgress] = useState<GameProgress>(defaultProgress);
-  const [level, setLevel] = useState(1);
-  const [questions, setQuestions] = useState<Question[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [score, setScore] = useState(0);
-  const [feedback, setFeedback] = useState<Feedback>(null);
   const [hydrated, setHydrated] = useState(false);
 
-  const meta = levelMeta[level - 1];
-  const currentQuestion = questions[currentIndex];
-  const passed = isLevelPassed(score);
+  const meta = levelMeta[session.level - 1];
+  const currentQuestion = getCurrentQuestion(session);
+  const passed = isSessionPassed(session);
   const completedAll = progress.completedLevels.length === TOTAL_LEVELS;
 
   useEffect(() => {
     const stored = loadProgress(window.localStorage);
     setProgress(stored);
-    setLevel(stored.currentLevel);
-    if (stored.highestLevel > 0 && stored.completedLevels.length < TOTAL_LEVELS) {
-      setQuestions(pickRandomQuestions(questionBank, stored.currentLevel));
-      setScreen("LEVEL_INTRO");
-    }
+    setSession(resumeSession(stored, questionBank));
     setHydrated(true);
   }, []);
 
@@ -55,89 +53,65 @@ export default function Home() {
     };
   }, [progress.completedLevels.length]);
 
-  function beginLevel(targetLevel = completedAll ? 1 : progress.currentLevel) {
-    const safeLevel = Math.min(TOTAL_LEVELS, Math.max(1, targetLevel));
-    setLevel(safeLevel);
-    setQuestions(pickRandomQuestions(questionBank, safeLevel));
-    setCurrentIndex(0);
-    setScore(0);
-    setFeedback(null);
-    setScreen("LEVEL_INTRO");
+  function beginLevel(targetLevel?: number) {
+    setSession(
+      targetLevel === undefined
+        ? startNextProgressLevelSession(progress, questionBank)
+        : startLevelSession(targetLevel, questionBank),
+    );
   }
 
   function answerQuestion(optionIndex: number) {
-    if (!currentQuestion) return;
-    const correct = optionIndex === currentQuestion.answer;
-    const nextScore = correct ? score + 1 : score;
+    const result = answerCurrentQuestion(session, optionIndex);
+    setSession(result.session);
 
-    setScore(nextScore);
-    setFeedback({
-      correct,
-      answer: currentQuestion.options[currentQuestion.answer],
-      explanation: currentQuestion.explanation,
-      reference: currentQuestion.reference,
-    });
-    if (correct) {
+    if (result.correct) {
       sounds.correct();
     } else {
       sounds.wrong();
     }
-    setScreen("FEEDBACK");
   }
 
   function skipFeedback() {
-    const nextIndex = currentIndex + 1;
-    if (nextIndex >= QUESTIONS_PER_RUN) {
-      setScreen("LEVEL_RESULT");
-      return;
-    }
-
-    setCurrentIndex(nextIndex);
-    setFeedback(null);
-    setScreen("QUESTION");
+    setSession(continueAfterFeedback(session));
   }
 
   function resolveLevelResult() {
     if (!passed) {
-      beginLevel(level);
+      beginLevel(session.level);
       return;
     }
 
-    const next = completeLevel(progress, level);
+    const next = completeLevel(progress, session.level);
     setProgress(next);
     saveProgress(next, window.localStorage);
-    if (level === TOTAL_LEVELS) {
+    if (session.level === TOTAL_LEVELS) {
       sounds.finalFanfare();
     } else {
       sounds.fanfare();
     }
-    setScreen("CELEBRATION");
+    setSession(showCelebration(session));
   }
 
   function nextLevel() {
-    if (level >= TOTAL_LEVELS) {
-      setScreen("HOME");
+    if (session.level >= TOTAL_LEVELS) {
+      setSession(goHome(session));
       return;
     }
-    beginLevel(level + 1);
+    beginLevel(session.level + 1);
   }
 
   function handleReset() {
     const next = resetProgress(window.localStorage);
     setProgress(next);
-    setLevel(1);
-    setQuestions([]);
-    setScore(0);
-    setCurrentIndex(0);
-    setFeedback(null);
-    setScreen("HOME");
+    setSession(defaultSession);
   }
 
   return (
     <main className="min-h-screen bg-cream text-brown-dark">
       <div className="mx-auto flex min-h-screen w-full max-w-5xl flex-col px-5 py-5 sm:px-8">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-gold/25 pb-4">
-          <button className="flex items-center gap-3 text-left" onClick={() => setScreen("HOME")}>
+          <button className="flex items-center gap-3 text-left" onClick={() => setSession(goHome(session))}>
             <span className="grid h-11 w-11 place-items-center rounded-full border border-gold/50 bg-cream-dark text-xl text-gold shadow-sm">
               ✦
             </span>
@@ -159,7 +133,7 @@ export default function Home() {
           </div>
         </header>
 
-        {screen === "HOME" && (
+        {session.screen === "HOME" && (
           <section className="grid flex-1 items-center gap-8 py-8 lg:grid-cols-[1.05fr_0.95fr]">
             <div className="space-y-7">
               <div className="space-y-4">
@@ -213,33 +187,33 @@ export default function Home() {
           </section>
         )}
 
-        {screen === "LEVEL_INTRO" && (
+        {session.screen === "LEVEL_INTRO" && (
           <CenteredPanel>
             <p className="text-sm font-bold text-gold">
               {meta.difficulty} · {meta.scope}
             </p>
             <h2 className="font-serif text-4xl font-extrabold">
-              {level}단계: {meta.title}
+              {session.level}단계: {meta.title}
             </h2>
             <p className="text-brown-dark/75">
               30문제 풀에서 무작위로 10문제가 출제됩니다. 7문제 이상 맞히면 다음 단계로 이동합니다.
             </p>
-            <button className="primary-button" onClick={() => setScreen("QUESTION")}>
+            <button className="primary-button" onClick={() => setSession(showQuestion(session))}>
               문제 풀기
             </button>
           </CenteredPanel>
         )}
 
-        {screen === "QUESTION" && currentQuestion && (
+        {session.screen === "QUESTION" && currentQuestion && (
           <section className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center gap-5 py-8">
-            <div className="grid gap-3 sm:grid-cols-3">
-              <Status label="단계" value={`${level}/${TOTAL_LEVELS}`} />
-              <Status label="문제" value={`${currentIndex + 1}/${QUESTIONS_PER_RUN}`} />
-              <Status label="점수" value={`${score}점`} />
+            <div className="grid grid-cols-3 gap-2 sm:gap-3">
+              <Status label="단계" value={`${session.level}/${TOTAL_LEVELS}`} />
+              <Status label="문제" value={`${session.currentIndex + 1}/${QUESTIONS_PER_RUN}`} />
+              <Status label="점수" value={`${session.score}점`} />
             </div>
             <ProgressBar
-              percent={Math.round(((currentIndex + 1) / QUESTIONS_PER_RUN) * 100)}
-              label={`${currentIndex + 1}번째 문제`}
+              percent={Math.round(((session.currentIndex + 1) / QUESTIONS_PER_RUN) * 100)}
+              label={`${session.currentIndex + 1}번째 문제`}
             />
             <div className="rounded-lg border border-gold/30 bg-white/70 p-5 shadow-sm sm:p-7">
               <p className="mb-3 text-sm font-bold text-gold">{meta.title}</p>
@@ -256,17 +230,19 @@ export default function Home() {
           </section>
         )}
 
-        {screen === "FEEDBACK" && feedback && (
+        {session.screen === "FEEDBACK" && session.feedback && (
           <div
             className={`fixed inset-0 z-20 grid place-items-center px-6 ${
-              feedback.correct ? "bg-emerald-700" : "bg-red-700"
+              session.feedback.correct ? "bg-emerald-700" : "bg-red-700"
             }`}
           >
             <div className="max-w-xl text-center text-white">
-              <div className="text-[8rem] font-black leading-none sm:text-[12rem]">{feedback.correct ? "O" : "X"}</div>
-              <p className="text-2xl font-bold">{feedback.correct ? "정답입니다" : `정답: ${feedback.answer}`}</p>
-              <p className="mt-3 text-lg font-bold text-white">[{feedback.reference}]</p>
-              <p className="mt-3 text-base text-white/85">{feedback.explanation}</p>
+              <div className="text-[8rem] font-black leading-none sm:text-[12rem]">{session.feedback.correct ? "O" : "X"}</div>
+              <p className="text-2xl font-bold">
+                {session.feedback.correct ? "정답입니다" : `정답: ${session.feedback.answer}`}
+              </p>
+              <p className="mt-3 text-lg font-bold text-white">[{session.feedback.reference}]</p>
+              <p className="mt-3 text-base text-white/85">{session.feedback.explanation}</p>
               <button
                 className="mt-7 rounded-md border border-white/60 bg-white px-5 py-3 text-sm font-bold text-brown-dark shadow-sm transition hover:bg-cream"
                 onClick={skipFeedback}
@@ -277,11 +253,11 @@ export default function Home() {
           </div>
         )}
 
-        {screen === "LEVEL_RESULT" && (
+        {session.screen === "LEVEL_RESULT" && (
           <CenteredPanel>
-            <p className="text-sm font-bold text-gold">{level}단계 결과</p>
+            <p className="text-sm font-bold text-gold">{session.level}단계 결과</p>
             <h2 className="font-serif text-4xl font-extrabold">
-              {score}/{QUESTIONS_PER_RUN} 정답
+              {session.score}/{QUESTIONS_PER_RUN} 정답
             </h2>
             <p className="text-brown-dark/75">
               {passed
@@ -294,20 +270,20 @@ export default function Home() {
           </CenteredPanel>
         )}
 
-        {screen === "CELEBRATION" && (
+        {session.screen === "CELEBRATION" && (
           <CenteredPanel>
             <div className="text-6xl">✦</div>
             <p className="text-sm font-bold text-gold">Level Clear</p>
             <h2 className="font-serif text-4xl font-extrabold">
-              {level === TOTAL_LEVELS ? "모든 단계를 완료했습니다" : `${level}단계 완료`}
+              {session.level === TOTAL_LEVELS ? "모든 단계를 완료했습니다" : `${session.level}단계 완료`}
             </h2>
             <p className="text-brown-dark/75">
-              {level === TOTAL_LEVELS
+              {session.level === TOTAL_LEVELS
                 ? "구약과 신약을 아우르는 전체 여정을 마쳤습니다."
-                : `${level + 1}단계에서 더 깊은 성경 지식을 확인해 보세요.`}
+                : `${session.level + 1}단계에서 더 깊은 성경 지식을 확인해 보세요.`}
             </p>
             <button className="primary-button" onClick={nextLevel}>
-              {level === TOTAL_LEVELS ? "홈으로 이동" : "다음 단계"}
+              {session.level === TOTAL_LEVELS ? "홈으로 이동" : "다음 단계"}
             </button>
           </CenteredPanel>
         )}
@@ -328,9 +304,9 @@ function CenteredPanel({ children }: { children: React.ReactNode }) {
 
 function Status({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border border-gold/25 bg-white/55 px-4 py-3">
+    <div className="rounded-md border border-gold/25 bg-white/55 px-2 py-2 text-center sm:px-4 sm:py-3">
       <p className="text-xs font-bold text-brown-dark/55">{label}</p>
-      <p className="text-xl font-black">{value}</p>
+      <p className="text-lg font-black sm:text-xl">{value}</p>
     </div>
   );
 }

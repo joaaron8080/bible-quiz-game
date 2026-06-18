@@ -31,6 +31,20 @@ describe("bible quiz logic", () => {
     expect(factIds.size).toBe(selected.length);
   });
 
+  it("uses who for person clue questions and what for non-person clue questions", () => {
+    expect(questionBank.find((question) => question.id === "L1-01-1")?.question).toContain("누구입니까?");
+    expect(questionBank.find((question) => question.id === "L1-03-1")?.question).toContain("무엇입니까?");
+    expect(questionBank.find((question) => question.id === "L5-04-1")?.question).toContain("무엇입니까?");
+    expect(questionBank.find((question) => question.id === "L5-10-1")?.question).toContain("무엇입니까?");
+  });
+
+  it("uses the correct topic and particle for second variant questions", () => {
+    expect(questionBank.find((question) => question.id === "L3-06-2")?.question).toContain("솔로몬의 지혜와");
+    expect(questionBank.find((question) => question.id === "L5-05-2")?.question).toContain("탕자의 비유와");
+    expect(questionBank.find((question) => question.id === "L5-07-2")?.question).toContain("나사로와");
+    expect(questionBank.find((question) => question.id === "L6-06-2")?.question).toContain("빌립과 에디오피아 내시와");
+  });
+
   it("saves completed level progress", () => {
     const progress = completeLevel(defaultProgress, 1);
 
