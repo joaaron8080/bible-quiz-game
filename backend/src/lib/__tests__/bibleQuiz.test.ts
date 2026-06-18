@@ -2,6 +2,7 @@ import {
   PASSING_SCORE,
   completeLevel,
   defaultProgress,
+  evaluateAnswer,
   isLevelPassed,
   loadProgress,
   pickRandomQuestions,
@@ -22,6 +23,7 @@ describe("bible quiz logic", () => {
     expect(selected).toHaveLength(10);
     expect(ids.size).toBe(10);
     expect(selected.every((question) => question.level === 1)).toBe(true);
+    expect(selected.every((question) => question.type === "multiple_choice")).toBe(true);
   });
 
   it("avoids repeating variants from the same fact in one run", () => {
@@ -43,6 +45,34 @@ describe("bible quiz logic", () => {
     expect(questionBank.find((question) => question.id === "L5-05-2")?.question).toContain("탕자의 비유와");
     expect(questionBank.find((question) => question.id === "L5-07-2")?.question).toContain("나사로와");
     expect(questionBank.find((question) => question.id === "L6-06-2")?.question).toContain("빌립과 에디오피아 내시와");
+  });
+
+  it("evaluates multiple choice, OX, and fill blank answers", () => {
+    const multipleChoice = questionBank.find((question) => question.id === "L1-01-1");
+    const trueFalse = questionBank.find((question) => question.id === "L1-01-tf-1");
+    const fillBlank = questionBank.find((question) => question.id === "L1-01-blank-1");
+
+    expect(multipleChoice?.type).toBe("multiple_choice");
+    expect(trueFalse?.type).toBe("true_false");
+    expect(fillBlank?.type).toBe("fill_blank");
+
+    if (!multipleChoice || multipleChoice.type !== "multiple_choice") throw new Error("Expected multiple choice");
+    if (!trueFalse || trueFalse.type !== "true_false") throw new Error("Expected OX");
+    if (!fillBlank || fillBlank.type !== "fill_blank") throw new Error("Expected fill blank");
+
+    expect(multipleChoice && evaluateAnswer(multipleChoice, multipleChoice.answer.index)).toBe(true);
+    expect(trueFalse && evaluateAnswer(trueFalse, true)).toBe(true);
+    expect(fillBlank && evaluateAnswer(fillBlank, ` ${fillBlank.answer.text} `)).toBe(true);
+  });
+
+  it("picks released non-classic mode questions end to end", () => {
+    const oxQuestions = pickRandomQuestions(questionBank, 1, 10, () => 0.42, "true_false");
+    const fillBlankQuestions = pickRandomQuestions(questionBank, 1, 10, () => 0.42, "fill_blank");
+
+    expect(oxQuestions).toHaveLength(10);
+    expect(fillBlankQuestions).toHaveLength(10);
+    expect(oxQuestions.every((question) => question.type === "true_false")).toBe(true);
+    expect(fillBlankQuestions.every((question) => question.type === "fill_blank")).toBe(true);
   });
 
   it("saves completed level progress", () => {

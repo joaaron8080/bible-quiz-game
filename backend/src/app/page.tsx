@@ -9,8 +9,13 @@ import {
   defaultProgress,
   levelMeta,
   loadProgress,
+  plannedQuizModes,
   resetProgress,
+  releasedQuizModes,
   saveProgress,
+  type Question,
+  type QuizMode,
+  type SubmittedAnswer,
 } from "@/lib/bibleQuiz";
 import {
   answerCurrentQuestion,
@@ -31,6 +36,7 @@ import { sounds } from "@/lib/sounds";
 export default function Home() {
   const [session, setSession] = useState(defaultSession);
   const [progress, setProgress] = useState<GameProgress>(defaultProgress);
+  const [selectedMode, setSelectedMode] = useState<QuizMode>("multiple_choice");
   const [hydrated, setHydrated] = useState(false);
 
   const meta = levelMeta[session.level - 1];
@@ -53,16 +59,16 @@ export default function Home() {
     };
   }, [progress.completedLevels.length]);
 
-  function beginLevel(targetLevel?: number) {
+  function beginLevel(targetLevel?: number, mode = selectedMode) {
     setSession(
       targetLevel === undefined
-        ? startNextProgressLevelSession(progress, questionBank)
-        : startLevelSession(targetLevel, questionBank),
+        ? startNextProgressLevelSession(progress, questionBank, Math.random, mode)
+        : startLevelSession(targetLevel, questionBank, Math.random, mode),
     );
   }
 
-  function answerQuestion(optionIndex: number) {
-    const result = answerCurrentQuestion(session, optionIndex);
+  function answerQuestion(answer: SubmittedAnswer) {
+    const result = answerCurrentQuestion(session, answer);
     setSession(result.session);
 
     if (result.correct) {
@@ -78,13 +84,16 @@ export default function Home() {
 
   function resolveLevelResult() {
     if (!passed) {
-      beginLevel(session.level);
+      beginLevel(session.level, session.mode);
       return;
     }
 
-    const next = completeLevel(progress, session.level);
-    setProgress(next);
-    saveProgress(next, window.localStorage);
+    if (session.mode === "multiple_choice") {
+      const next = completeLevel(progress, session.level);
+      setProgress(next);
+      saveProgress(next, window.localStorage);
+    }
+
     if (session.level === TOTAL_LEVELS) {
       sounds.finalFanfare();
     } else {
@@ -94,7 +103,7 @@ export default function Home() {
   }
 
   function nextLevel() {
-    if (session.level >= TOTAL_LEVELS) {
+    if (session.mode !== "multiple_choice" || session.level >= TOTAL_LEVELS) {
       setSession(goHome(session));
       return;
     }
@@ -154,6 +163,35 @@ export default function Home() {
                   처음부터 시작
                 </button>
               </div>
+              <div className="space-y-3">
+                <p className="text-sm font-bold uppercase text-brown-dark/60">Quiz Mode</p>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {releasedQuizModes.map((mode) => (
+                    <button
+                      className={`rounded-lg border p-4 text-left shadow-sm transition ${
+                        selectedMode === mode.id
+                          ? "border-gold bg-white/80"
+                          : "border-gold/20 bg-white/35 hover:bg-white/60"
+                      }`}
+                      key={mode.id}
+                      onClick={() => setSelectedMode(mode.id)}
+                    >
+                      <span className="block font-serif text-lg font-bold">{mode.label}</span>
+                      <span className="mt-1 block text-sm leading-6 text-brown-dark/65">{mode.description}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {plannedQuizModes.map((mode) => (
+                    <span
+                      className="rounded-full border border-brown-dark/10 bg-white/35 px-3 py-1 text-xs font-bold text-brown-dark/55"
+                      key={mode.id}
+                    >
+                      {mode.label} planned
+                    </span>
+                  ))}
+                </div>
+              </div>
               <ProgressBar percent={stats.percent} label={`전체 진행률 ${stats.percent}%`} />
             </div>
 
@@ -190,13 +228,13 @@ export default function Home() {
         {session.screen === "LEVEL_INTRO" && (
           <CenteredPanel>
             <p className="text-sm font-bold text-gold">
-              {meta.difficulty} · {meta.scope}
+              {getModeLabel(session.mode)} · {meta.difficulty} · {meta.scope}
             </p>
             <h2 className="font-serif text-4xl font-extrabold">
               {session.level}단계: {meta.title}
             </h2>
             <p className="text-brown-dark/75">
-              30문제 풀에서 무작위로 10문제가 출제됩니다. 7문제 이상 맞히면 다음 단계로 이동합니다.
+              10문제가 출제됩니다. 7문제 이상 맞히면 통과합니다.
             </p>
             <button className="primary-button" onClick={() => setSession(showQuestion(session))}>
               문제 풀기
@@ -211,6 +249,7 @@ export default function Home() {
               <Status label="문제" value={`${session.currentIndex + 1}/${QUESTIONS_PER_RUN}`} />
               <Status label="점수" value={`${session.score}점`} />
             </div>
+            <Status label="모드" value={getModeLabel(session.mode)} />
             <ProgressBar
               percent={Math.round(((session.currentIndex + 1) / QUESTIONS_PER_RUN) * 100)}
               label={`${session.currentIndex + 1}번째 문제`}
@@ -219,14 +258,7 @@ export default function Home() {
               <p className="mb-3 text-sm font-bold text-gold">{meta.title}</p>
               <h2 className="font-serif text-2xl font-bold leading-relaxed sm:text-3xl">{currentQuestion.question}</h2>
             </div>
-            <div className="grid gap-3">
-              {currentQuestion.options.map((option, index) => (
-                <button className="answer-button" key={`${currentQuestion.id}-${option}`} onClick={() => answerQuestion(index)}>
-                  <span>{String.fromCharCode(65 + index)}</span>
-                  {option}
-                </button>
-              ))}
-            </div>
+            <QuestionAnswerControls question={currentQuestion} onAnswer={answerQuestion} />
           </section>
         )}
 
@@ -283,13 +315,88 @@ export default function Home() {
                 : `${session.level + 1}단계에서 더 깊은 성경 지식을 확인해 보세요.`}
             </p>
             <button className="primary-button" onClick={nextLevel}>
-              {session.level === TOTAL_LEVELS ? "홈으로 이동" : "다음 단계"}
+              {session.mode !== "multiple_choice" || session.level === TOTAL_LEVELS ? "홈으로 이동" : "다음 단계"}
             </button>
           </CenteredPanel>
         )}
       </div>
     </main>
   );
+}
+
+function QuestionAnswerControls({
+  question,
+  onAnswer,
+}: {
+  question: Question;
+  onAnswer: (answer: SubmittedAnswer) => void;
+}) {
+  if (question.type === "multiple_choice") {
+    return (
+      <div className="grid gap-3">
+        {question.payload.choices.map((option, index) => (
+          <button className="answer-button" key={`${question.id}-${option}`} onClick={() => onAnswer(index)}>
+            <span>{String.fromCharCode(65 + index)}</span>
+            {option}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  if (question.type === "true_false") {
+    return (
+      <div className="grid grid-cols-2 gap-3">
+        <button className="answer-button justify-center text-center" onClick={() => onAnswer(true)}>
+          <span>O</span>
+          맞음
+        </button>
+        <button className="answer-button justify-center text-center" onClick={() => onAnswer(false)}>
+          <span>X</span>
+          틀림
+        </button>
+      </div>
+    );
+  }
+
+  if (question.type === "fill_blank") {
+    return <FillBlankAnswer onAnswer={onAnswer} />;
+  }
+
+  return (
+    <div className="rounded-lg border border-gold/25 bg-white/70 p-5 text-center text-sm font-bold text-brown-dark/65">
+      이 모드는 다음 릴리스에서 플레이할 수 있습니다.
+    </div>
+  );
+}
+
+function FillBlankAnswer({ onAnswer }: { onAnswer: (answer: SubmittedAnswer) => void }) {
+  const [value, setValue] = useState("");
+
+  return (
+    <form
+      className="grid gap-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onAnswer(value);
+        setValue("");
+      }}
+    >
+      <input
+        className="min-h-14 rounded-lg border border-gold/25 bg-white/80 px-4 text-lg font-bold outline-none transition focus:border-gold"
+        onChange={(event) => setValue(event.target.value)}
+        placeholder="정답 입력"
+        value={value}
+      />
+      <button className="primary-button w-full" disabled={!value.trim()} type="submit">
+        제출
+      </button>
+    </form>
+  );
+}
+
+function getModeLabel(mode: QuizMode) {
+  return [...releasedQuizModes, ...plannedQuizModes].find((item) => item.id === mode)?.label ?? "Quiz";
 }
 
 function CenteredPanel({ children }: { children: React.ReactNode }) {

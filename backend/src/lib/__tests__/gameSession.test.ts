@@ -24,14 +24,16 @@ describe("game session logic", () => {
   it("answers the current question and exposes feedback", () => {
     const session = showQuestion(startLevelSession(1, questionBank, () => 0.42));
     const currentQuestion = session.questions[0];
-    const result = answerCurrentQuestion(session, currentQuestion.answer);
+    if (currentQuestion.type !== "multiple_choice") throw new Error("Expected multiple choice question");
+
+    const result = answerCurrentQuestion(session, currentQuestion.answer.index);
 
     expect(result.correct).toBe(true);
     expect(result.session.screen).toBe("FEEDBACK");
     expect(result.session.score).toBe(1);
     expect(result.session.feedback).toMatchObject({
       correct: true,
-      answer: currentQuestion.options[currentQuestion.answer],
+      answer: currentQuestion.payload.choices[currentQuestion.answer.index],
       explanation: currentQuestion.explanation,
       reference: currentQuestion.reference,
     });
@@ -39,7 +41,10 @@ describe("game session logic", () => {
 
   it("continues from feedback to the next question or result", () => {
     const session = showQuestion(startLevelSession(1, questionBank, () => 0.42));
-    const answered = answerCurrentQuestion(session, session.questions[0].answer).session;
+    const currentQuestion = session.questions[0];
+    if (currentQuestion.type !== "multiple_choice") throw new Error("Expected multiple choice question");
+
+    const answered = answerCurrentQuestion(session, currentQuestion.answer.index).session;
     const nextQuestion = continueAfterFeedback(answered);
 
     expect(nextQuestion.screen).toBe("QUESTION");
@@ -60,6 +65,30 @@ describe("game session logic", () => {
 
     expect(session.screen).toBe("LEVEL_INTRO");
     expect(session.level).toBe(4);
+  });
+
+  it("runs an OX quiz session", () => {
+    const session = showQuestion(startLevelSession(1, questionBank, () => 0.42, "true_false"));
+    const currentQuestion = session.questions[0];
+    if (currentQuestion.type !== "true_false") throw new Error("Expected OX question");
+
+    const result = answerCurrentQuestion(session, currentQuestion.answer.value);
+
+    expect(session.mode).toBe("true_false");
+    expect(result.correct).toBe(true);
+    expect(result.session.feedback?.answer).toMatch(/O|X/);
+  });
+
+  it("runs a fill blank quiz session", () => {
+    const session = showQuestion(startLevelSession(1, questionBank, () => 0.42, "fill_blank"));
+    const currentQuestion = session.questions[0];
+    if (currentQuestion.type !== "fill_blank") throw new Error("Expected fill blank question");
+
+    const result = answerCurrentQuestion(session, currentQuestion.answer.text);
+
+    expect(session.mode).toBe("fill_blank");
+    expect(result.correct).toBe(true);
+    expect(result.session.score).toBe(1);
   });
 
   it("restarts from level one when all levels are complete", () => {

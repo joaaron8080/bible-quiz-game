@@ -29,8 +29,9 @@ main() {
 
   while true; do
     if [ -f "$QUEUE_FILE" ]; then
-      local issue_id task_content timestamp done_file
+      local issue_id github_issue task_content timestamp done_file
       issue_id=$(grep "^id:" "$QUEUE_FILE" | awk '{print $2}' || echo "unknown")
+      github_issue=$(grep "^github_issue:" "$QUEUE_FILE" | awk '{print $2}' || echo "")
       task_content=$(cat "$QUEUE_FILE")
       timestamp=$(date +%s)
       done_file="$DONE_DIR/frontend-issue-${issue_id}-${timestamp}.md"
@@ -58,10 +59,11 @@ ${task_content}
         log "⚠️ Issue #${issue_id} codex exec 종료 코드: $exit_code"
       fi
 
-      # 완료 보고서 작성
+      # 완료 보고서 작성 (큐 삭제 전에 먼저 기록)
       cat > "$done_file" <<EOF
 ---
 id: $issue_id
+github_issue: $github_issue
 agent: Codex
 type: Frontend
 completed_at: $(date '+%Y-%m-%d %H:%M:%S')
@@ -79,12 +81,18 @@ Codex(codex exec)에 의해 작업 완료됨. (exit code: $exit_code)
 상세 로그는 logs/codex.log 참조.
 EOF
 
+      if [ $? -ne 0 ]; then
+        log "❌ 완료 보고서 작성 실패 → 큐 유지 (재시도 예정)"
+        sleep "$LOOP_INTERVAL"
+        continue
+      fi
+
       rm -f "$QUEUE_FILE"
       log "📄 완료 보고서 작성 → $done_file"
 
       # ── Git 자동 커밋 (Issue 단위 복구 지점 생성) ──────────
       if git rev-parse --git-dir &>/dev/null; then
-        git add -A >> "$LOG_FILE" 2>&1
+        git add -u >> "$LOG_FILE" 2>&1
         if git commit -m "feat(frontend): Issue #${issue_id} 완료 [Codex]" >> "$LOG_FILE" 2>&1; then
           log "💾 Git 커밋 완료: Issue #${issue_id}"
         else

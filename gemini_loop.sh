@@ -27,8 +27,9 @@ main() {
 
   while true; do
     if [ -f "$QUEUE_FILE" ]; then
-      local issue_id task_content timestamp done_file
+      local issue_id github_issue task_content timestamp done_file
       issue_id=$(grep "^id:" "$QUEUE_FILE" | awk '{print $2}' || echo "unknown")
+      github_issue=$(grep "^github_issue:" "$QUEUE_FILE" | awk '{print $2}' || echo "")
       task_content=$(cat "$QUEUE_FILE")
       timestamp=$(date +%s)
       done_file="$DONE_DIR/backend-issue-${issue_id}-${timestamp}.md"
@@ -57,6 +58,7 @@ ${task_content}
       cat > "$done_file" <<EOF
 ---
 id: $issue_id
+github_issue: $github_issue
 agent: Gemini
 type: Backend
 completed_at: $(date '+%Y-%m-%d %H:%M:%S')

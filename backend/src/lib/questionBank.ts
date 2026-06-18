@@ -1,4 +1,4 @@
-import type { Question } from "./bibleQuiz";
+import type { Difficulty, FillBlankQuestion, MultipleChoiceQuestion, Question, TrueFalseQuestion } from "./bibleQuiz";
 
 type Fact = {
   topic: string;
@@ -145,16 +145,29 @@ const levelReferences: Record<number, string[]> = {
 };
 
 export const questionBank: Question[] = Object.entries(levelFacts).flatMap(([level, facts]) =>
-  facts.flatMap((item, index) => buildQuestionSet(Number(level), item, index)),
+  facts.flatMap((item, index) => [
+    ...buildQuestionSet(Number(level), item, index),
+    ...buildTrueFalseSet(Number(level), item, index),
+    createFillBlankQuestion(Number(level), item, index),
+  ]),
 );
 
-function buildQuestionSet(level: number, fact: Fact, index: number): Question[] {
+function buildQuestionSet(level: number, fact: Fact, index: number): MultipleChoiceQuestion[] {
   const baseId = `L${level}-${String(index + 1).padStart(2, "0")}`;
   const reference = levelReferences[level][index];
   return [
     createQuestion(baseId, level, `${fact.clue}은(는) ${getClueQuestionWord(fact.clue)}?`, fact, reference, 0),
     createQuestion(baseId, level, `${fact.topic}${getAndParticle(fact.topic)} 가장 직접 관련된 설명은 무엇입니까?`, fact, reference, 1),
     createQuestion(baseId, level, `다음 중 ${fact.topic}에 대한 바른 답은 무엇입니까?`, fact, reference, 2),
+  ];
+}
+
+function buildTrueFalseSet(level: number, fact: Fact, index: number): TrueFalseQuestion[] {
+  const baseId = `L${level}-${String(index + 1).padStart(2, "0")}-tf`;
+  const reference = levelReferences[level][index];
+  return [
+    createTrueFalseQuestion(baseId, level, `${fact.topic}: ${fact.answer}`, true, fact, reference, 0),
+    createTrueFalseQuestion(baseId, level, `${fact.topic}: ${fact.wrong[0]}`, false, fact, reference, 1),
   ];
 }
 
@@ -180,17 +193,82 @@ function getAndParticle(value: string) {
   return (code - hangulStart) % 28 === 0 ? "와" : "과";
 }
 
-function createQuestion(baseId: string, level: number, question: string, fact: Fact, reference: string, variant: number): Question {
+function createQuestion(
+  baseId: string,
+  level: number,
+  question: string,
+  fact: Fact,
+  reference: string,
+  variant: number,
+): MultipleChoiceQuestion {
   const options = rotate<[string, string, string, string]>([fact.answer, ...fact.wrong], variant);
   return {
     id: `${baseId}-${variant + 1}`,
     level,
+    type: "multiple_choice",
+    category: fact.topic,
+    difficulty: getDifficulty(level),
     question,
-    options,
-    answer: options.indexOf(fact.answer),
+    payload: {
+      choices: options,
+    },
+    answer: {
+      index: options.indexOf(fact.answer),
+    },
     explanation: fact.explanation,
     reference,
   };
+}
+
+function createTrueFalseQuestion(
+  baseId: string,
+  level: number,
+  statement: string,
+  answer: boolean,
+  fact: Fact,
+  reference: string,
+  variant: number,
+): TrueFalseQuestion {
+  return {
+    id: `${baseId}-${variant + 1}`,
+    level,
+    type: "true_false",
+    category: fact.topic,
+    difficulty: getDifficulty(level),
+    question: `${statement} - OX`,
+    payload: {},
+    answer: {
+      value: answer,
+    },
+    explanation: fact.explanation,
+    reference,
+  };
+}
+
+function createFillBlankQuestion(level: number, fact: Fact, index: number): FillBlankQuestion {
+  return {
+    id: `L${level}-${String(index + 1).padStart(2, "0")}-blank-1`,
+    level,
+    type: "fill_blank",
+    category: fact.topic,
+    difficulty: getDifficulty(level),
+    question: `${fact.clue}: ______`,
+    payload: {
+      blankLabel: fact.topic,
+    },
+    answer: {
+      text: fact.answer,
+    },
+    explanation: fact.explanation,
+    reference: levelReferences[level][index],
+  };
+}
+
+function getDifficulty(level: number): Difficulty {
+  if (level <= 3) return "easy";
+  if (level <= 6) return "medium";
+  if (level <= 8) return "hard";
+  return "expert";
 }
 
 function rotate<T extends unknown[]>(items: T, amount: number): T {

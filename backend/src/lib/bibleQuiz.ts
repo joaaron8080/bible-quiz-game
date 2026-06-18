@@ -1,12 +1,102 @@
-export type Question = {
+export type QuestionType =
+  | "multiple_choice"
+  | "true_false"
+  | "fill_blank"
+  | "ordering"
+  | "matching"
+  | "image_quiz";
+
+export type QuizMode = QuestionType | "boss_battle";
+
+export type Difficulty = "easy" | "medium" | "hard" | "expert";
+
+type QuestionBase = {
   id: string;
   level: number;
+  type: QuestionType;
+  category: string;
+  difficulty: Difficulty;
   question: string;
-  options: [string, string, string, string];
-  answer: number;
   explanation: string;
   reference: string;
 };
+
+export type MultipleChoiceQuestion = QuestionBase & {
+  type: "multiple_choice";
+  payload: {
+    choices: [string, string, string, string];
+  };
+  answer: {
+    index: number;
+  };
+};
+
+export type TrueFalseQuestion = QuestionBase & {
+  type: "true_false";
+  payload: Record<string, never>;
+  answer: {
+    value: boolean;
+  };
+};
+
+export type FillBlankQuestion = QuestionBase & {
+  type: "fill_blank";
+  payload: {
+    blankLabel?: string;
+  };
+  answer: {
+    text: string;
+    accepted?: string[];
+  };
+};
+
+export type OrderingQuestion = QuestionBase & {
+  type: "ordering";
+  payload: {
+    items: string[];
+  };
+  answer: {
+    order: string[];
+  };
+};
+
+export type MatchingQuestion = QuestionBase & {
+  type: "matching";
+  payload: {
+    pairs: Array<{ left: string; right: string }>;
+  };
+  answer: {
+    pairs: Array<{ left: string; right: string }>;
+  };
+};
+
+export type ImageQuizQuestion = QuestionBase & {
+  type: "image_quiz";
+  payload: {
+    imageUrl: string;
+    choices?: [string, string, string, string];
+  };
+  answer: {
+    index?: number;
+    text?: string;
+  };
+};
+
+export type Question =
+  | MultipleChoiceQuestion
+  | TrueFalseQuestion
+  | FillBlankQuestion
+  | OrderingQuestion
+  | MatchingQuestion
+  | ImageQuizQuestion;
+
+export type SubmittedAnswer =
+  | number
+  | boolean
+  | string
+  | string[]
+  | Record<string, string>
+  | Array<{ left: string; right: string }>;
 
 export type GameProgress = {
   highestLevel: number;
@@ -18,6 +108,47 @@ export const TOTAL_LEVELS = 10;
 export const QUESTIONS_PER_RUN = 10;
 export const PASSING_SCORE = 7;
 export const STORAGE_KEY = "bible-quiz-progress-v1";
+
+export const releasedQuizModes: Array<{ id: QuizMode; label: string; description: string }> = [
+  {
+    id: "multiple_choice",
+    label: "Classic Level",
+    description: "4지선다 10문제를 풀고 단계별 진행도를 올립니다.",
+  },
+  {
+    id: "true_false",
+    label: "OX Quiz",
+    description: "문장이 맞는지 빠르게 판단합니다.",
+  },
+  {
+    id: "fill_blank",
+    label: "Fill Blank",
+    description: "핵심 답을 직접 입력하며 암송 감각을 익힙니다.",
+  },
+];
+
+export const plannedQuizModes: Array<{ id: QuizMode; label: string; description: string }> = [
+  {
+    id: "ordering",
+    label: "Ordering Quiz",
+    description: "성경 사건의 흐름을 순서대로 맞춥니다.",
+  },
+  {
+    id: "matching",
+    label: "Matching Quiz",
+    description: "인물과 사건을 서로 연결합니다.",
+  },
+  {
+    id: "image_quiz",
+    label: "Image Quiz",
+    description: "이미지를 보고 성경 이야기를 맞춥니다.",
+  },
+  {
+    id: "boss_battle",
+    label: "Boss Battle",
+    description: "연속 문제와 생명력 규칙을 결합한 도전 모드입니다.",
+  },
+];
 
 export const levelMeta = [
   { level: 1, title: "창세기와 족장", scope: "구약 유명 사건", difficulty: "쉬움" },
@@ -56,8 +187,9 @@ export function pickRandomQuestions(
   level: number,
   count = QUESTIONS_PER_RUN,
   random = Math.random,
+  mode: QuizMode = "multiple_choice",
 ) {
-  const pool = questions.filter((question) => question.level === level);
+  const pool = questions.filter((question) => question.level === level && question.type === getQuestionTypeForMode(mode));
   const selectedIds = new Set<string>();
   const selected = shuffleQuestions(groupQuestionsByFact(pool), random)
     .flatMap((group) => shuffleQuestions(group, random).slice(0, 1))
@@ -78,13 +210,88 @@ export function pickRandomQuestions(
 }
 
 export function shuffleOptions(question: Question, random = Math.random): Question {
-  const indexed = question.options.map((option, index) => ({ option, index }));
+  if (question.type === "multiple_choice") {
+    const indexed = question.payload.choices.map((option, index) => ({ option, index }));
+    const shuffled = shuffleQuestions(indexed, random);
+    return {
+      ...question,
+      payload: {
+        choices: shuffled.map((item) => item.option) as [string, string, string, string],
+      },
+      answer: {
+        index: shuffled.findIndex((item) => item.index === question.answer.index),
+      },
+    };
+  }
+
+  if (question.type !== "image_quiz" || !question.payload.choices || question.answer.index === undefined) {
+    return question;
+  }
+
+  const indexed = question.payload.choices.map((option, index) => ({ option, index }));
   const shuffled = shuffleQuestions(indexed, random);
   return {
     ...question,
-    options: shuffled.map((item) => item.option) as [string, string, string, string],
-    answer: shuffled.findIndex((item) => item.index === question.answer),
+    payload: {
+      ...question.payload,
+      choices: shuffled.map((item) => item.option) as [string, string, string, string],
+    },
+    answer: {
+      ...question.answer,
+      index: shuffled.findIndex((item) => item.index === question.answer.index),
+    },
   };
+}
+
+export function evaluateAnswer(question: Question, submitted: SubmittedAnswer) {
+  switch (question.type) {
+    case "multiple_choice":
+      return typeof submitted === "number" && submitted === question.answer.index;
+    case "true_false":
+      return typeof submitted === "boolean" && submitted === question.answer.value;
+    case "fill_blank":
+      if (typeof submitted !== "string") return false;
+      return [question.answer.text, ...(question.answer.accepted ?? [])]
+        .map(normalizeText)
+        .includes(normalizeText(submitted));
+    case "ordering":
+      return Array.isArray(submitted) && submitted.every((item): item is string => typeof item === "string") && stringsEqual(submitted, question.answer.order);
+    case "matching":
+      return isMatchingAnswer(submitted) && matchingEqual(submitted, question.answer.pairs);
+    case "image_quiz":
+      if (question.answer.index !== undefined) {
+        return typeof submitted === "number" && submitted === question.answer.index;
+      }
+      return typeof submitted === "string" && normalizeText(submitted) === normalizeText(question.answer.text ?? "");
+    default:
+      return false;
+  }
+}
+
+export function getCorrectAnswerText(question: Question) {
+  switch (question.type) {
+    case "multiple_choice":
+      return question.payload.choices[question.answer.index];
+    case "true_false":
+      return question.answer.value ? "O" : "X";
+    case "fill_blank":
+      return question.answer.text;
+    case "ordering":
+      return question.answer.order.join(" > ");
+    case "matching":
+      return question.answer.pairs.map((pair) => `${pair.left}: ${pair.right}`).join(", ");
+    case "image_quiz":
+      if (question.answer.index !== undefined && question.payload.choices) {
+        return question.payload.choices[question.answer.index];
+      }
+      return question.answer.text ?? "";
+    default:
+      return "";
+  }
+}
+
+export function getQuestionTypeForMode(mode: QuizMode): QuestionType {
+  return mode === "boss_battle" ? "multiple_choice" : mode;
 }
 
 function groupQuestionsByFact(questions: Question[]) {
@@ -105,6 +312,39 @@ function groupQuestionsByFact(questions: Question[]) {
 
 function getQuestionFactId(id: string) {
   return id.replace(/-\d+$/, "");
+}
+
+function normalizeText(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
+}
+
+function stringsEqual(left: string[], right: string[]) {
+  return left.length === right.length && left.every((item, index) => normalizeText(item) === normalizeText(right[index]));
+}
+
+function isMatchingAnswer(value: SubmittedAnswer): value is Record<string, string> | Array<{ left: string; right: string }> {
+  if (Array.isArray(value)) {
+    return value.every(
+      (item) =>
+        item &&
+        typeof item === "object" &&
+        "left" in item &&
+        "right" in item &&
+        typeof item.left === "string" &&
+        typeof item.right === "string",
+    );
+  }
+
+  return Boolean(value && typeof value === "object");
+}
+
+function matchingEqual(submitted: Record<string, string> | Array<{ left: string; right: string }>, expected: Array<{ left: string; right: string }>) {
+  const submittedPairs = Array.isArray(submitted)
+    ? submitted
+    : Object.entries(submitted).map(([left, right]) => ({ left, right }));
+  const submittedMap = new Map(submittedPairs.map((pair) => [normalizeText(pair.left), normalizeText(pair.right)]));
+
+  return expected.every((pair) => submittedMap.get(normalizeText(pair.left)) === normalizeText(pair.right));
 }
 
 export function completeLevel(progress: GameProgress, level: number): GameProgress {

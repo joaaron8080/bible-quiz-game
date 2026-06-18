@@ -57,6 +57,20 @@ EOF
   fi
 }
 
+# ── 재실행 대비: iteration 카운터 리셋 ──────────────────────
+reset_iteration() {
+  $PYTHON -c "
+import json
+with open('$STATE_FILE', 'r') as f:
+    d = json.load(f)
+d['iteration'] = 0
+d['status'] = 'running'
+with open('$STATE_FILE', 'w') as f:
+    json.dump(d, f, indent=2)
+"
+  log "🔄 iteration 리셋 (재실행 대비)"
+}
+
 # ── 끊김 복구: 큐에 남은 미완료 Issue를 issues로 되돌림 ──────
 recover_orphaned_queue() {
   local recovered=0
@@ -91,7 +105,7 @@ recover_orphaned_queue() {
 }
 
 get_iteration() {
-  $PYTHON -c "import json; d=json.load(open('$STATE_FILE')); print(d['iteration'])"
+  STATE_FILE="$STATE_FILE" $PYTHON -c "import json,os; d=json.load(open(os.environ['STATE_FILE'])); print(d['iteration'])"
 }
 
 bump_iteration() {
@@ -160,10 +174,23 @@ sync_github_issues() {
   # ── Python 스크립트를 별도 파일로 실행 (heredoc 오류 우회) ──
   local py_script=".fable/sync_issues.py"
   cat > "$py_script" << 'PYEOF'
-import json, os, sys
+import json, os, sys, glob
 
-tmp_json = sys.argv[1]
-issues_dir = sys.argv[2]
+tmp_json    = sys.argv[1]
+issues_dir  = sys.argv[2]
+done_dir    = sys.argv[3]
+archive_dir = sys.argv[4]
+
+def already_tracked(num):
+    # 진행/완료 중인 issue 재생성 차단 (중단 작업 이어가기 핵심)
+    if os.path.exists(os.path.join(issues_dir, f"issue-{num}.md")):
+        return "issues"
+    if os.path.exists(os.path.join(archive_dir, f"issue-{num}.md")):
+        return "archive(완료)"
+    # done 보고서 파일명: {front,back}end-issue-NNN-timestamp.md
+    if glob.glob(os.path.join(done_dir, f"*issue-{num}-*.md")):
+        return "done(리뷰대기)"
+    return None
 
 with open(tmp_json, "r", encoding="utf-8") as f:
     issues = json.load(f)
@@ -172,15 +199,15 @@ for issue in issues:
     num    = str(issue["number"]).zfill(3)
     labels = [l["name"].lower() for l in issue["labels"]]
 
-    if "frontend" in labels:
+    if "enhancement" in labels or "frontend" in labels:
         issue_type = "Frontend"
     elif "backend" in labels:
         issue_type = "Backend"
     else:
         issue_type = "unassigned"
 
-    filepath = os.path.join(issues_dir, f"issue-{num}.md")
-    if not os.path.exists(filepath):
+    tracked = already_tracked(num)
+    if tracked is None:
         body = issue.get("body") or ""
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(f"---\n")
@@ -196,10 +223,10 @@ for issue in issues:
         status = "unassigned" if issue_type == "unassigned" else "ok"
         print(f"  {'⚠️ ' if status == 'unassigned' else '✅'} issue-{num}.md 생성 (type: {issue_type})")
     else:
-        print(f"  ⏭️  issue-{num}.md 이미 존재, 스킵")
+        print(f"  ⏭️  issue-{num} 이미 추적중({tracked}), 스킵")
 PYEOF
 
-  $PYTHON "$py_script" "$tmp_json" "$ISSUES_DIR" 2>> "$LOG_FILE" \
+  $PYTHON "$py_script" "$tmp_json" "$ISSUES_DIR" "$DONE_DIR" "$ARCHIVE_DIR" 2>> "$LOG_FILE" \
     || log "⚠️ Python 처리 중 오류"
 
   rm -f "$tmp_json" "$py_script"
@@ -328,6 +355,32 @@ assign_next_issues() {
   done
 }
 
+# ── 승인된 Issue를 GitHub에서 close (완료 source of truth) ──
+close_github_issue() {
+  local done_file="$1"
+  local gh_num
+  gh_num=$(grep "^github_issue:" "$done_file" | awk '{print $2}' || echo "")
+
+  # 숫자 아니면 스킵 (수동 생성 issue 등)
+  if ! [[ "$gh_num" =~ ^[0-9]+$ ]]; then
+    log "  ℹ️ github_issue 번호 없음 → close 스킵"
+    return
+  fi
+
+  if ! command -v gh &>/dev/null || ! gh auth status &>/dev/null; then
+    log "  ⚠️ gh 미사용/미인증 → GitHub close 스킵 (#${gh_num})"
+    return
+  fi
+
+  if gh issue close "$gh_num" \
+       --comment "✅ 자동화 파이프라인 완료 (fable5 승인). 상세는 커밋 로그 참조." \
+       >> "$LOG_FILE" 2>&1; then
+    log "  🔒 GitHub issue #${gh_num} close 완료"
+  else
+    log "  ⚠️ GitHub issue #${gh_num} close 실패 (이미 닫힘 가능)"
+  fi
+}
+
 # ── STEP 3: 완료된 결과 리뷰 ─────────────────────────────────
 review_done_issues() {
   local done_count
@@ -368,16 +421,28 @@ try:
     text = sys.stdin.read().strip()
     parsed = json.loads(text)
     print(str(parsed.get('approved', True)).lower())
-except:
-    print('true')
-" 2>/dev/null || echo "true")
+except Exception as e:
+    import sys as _sys
+    print('parse error: ' + str(e), file=_sys.stderr)
+    print('false')
+" 2>> "$LOG_FILE" || echo "false")
+
+    # 정규 파일명으로 통일: 의존성/recover/sync 체크가 issue-NNN.md 기대
+    local canonical_id canonical_name
+    canonical_id=$(grep "^id:" "$done_file" | awk '{print $2}' || echo "")
+    if [ -n "$canonical_id" ]; then
+      canonical_name="issue-${canonical_id}.md"
+    else
+      canonical_name="$issue_name"
+    fi
 
     if [ "$approved" = "true" ]; then
-      mv "$done_file" "$ARCHIVE_DIR/$issue_name"
-      log "  ✅ $issue_name 승인 → archive"
+      close_github_issue "$done_file"
+      mv "$done_file" "$ARCHIVE_DIR/$canonical_name"
+      log "  ✅ $issue_name 승인 → archive/$canonical_name"
     else
-      log "  🔄 $issue_name 재작업 필요 → issues 복귀"
-      mv "$done_file" "$ISSUES_DIR/$issue_name"
+      log "  🔄 $issue_name 재작업 필요 → issues 복귀 ($canonical_name)"
+      mv "$done_file" "$ISSUES_DIR/$canonical_name"
     fi
   done
 }
@@ -417,6 +482,7 @@ main() {
 
   init_dirs
   init_state
+  reset_iteration
   recover_orphaned_queue
   sync_github_issues
   classify_unassigned_issues
