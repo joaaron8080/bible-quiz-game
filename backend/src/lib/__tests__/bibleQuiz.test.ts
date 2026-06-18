@@ -6,7 +6,9 @@ import {
   isLevelPassed,
   loadProgress,
   pickRandomQuestions,
+  questionTypes,
   saveProgress,
+  type Question,
 } from "../bibleQuiz";
 import { questionBank } from "../questionBank";
 
@@ -24,6 +26,17 @@ describe("bible quiz logic", () => {
     expect(ids.size).toBe(10);
     expect(selected.every((question) => question.level === 1)).toBe(true);
     expect(selected.every((question) => question.type === "multiple_choice")).toBe(true);
+  });
+
+  it("exposes the QuestionType vocabulary from the generic model", () => {
+    expect(questionTypes).toEqual([
+      "multiple_choice",
+      "true_false",
+      "fill_blank",
+      "ordering",
+      "matching",
+      "image_quiz",
+    ]);
   });
 
   it("avoids repeating variants from the same fact in one run", () => {
@@ -63,6 +76,49 @@ describe("bible quiz logic", () => {
     expect(multipleChoice && evaluateAnswer(multipleChoice, multipleChoice.answer.index)).toBe(true);
     expect(trueFalse && evaluateAnswer(trueFalse, true)).toBe(true);
     expect(fillBlank && evaluateAnswer(fillBlank, ` ${fillBlank.answer.text} `)).toBe(true);
+  });
+
+  it("represents migrated multiple choice questions through type, payload, and answer", () => {
+    const question = questionBank.find((item) => item.id === "L1-01-1");
+    if (!question || question.type !== "multiple_choice") throw new Error("Expected multiple choice");
+
+    expect(question).toMatchObject({
+      type: "multiple_choice",
+      payload: {
+        choices: expect.any(Array),
+      },
+      answer: {
+        index: expect.any(Number),
+      },
+      explanation: expect.any(String),
+      reference: expect.any(String),
+    });
+    expect("options" in question).toBe(false);
+    expect(question.payload.choices).toHaveLength(4);
+    expect(question.payload.choices[question.answer.index]).toBeDefined();
+  });
+
+  it("evaluates a generic multiple choice question without the old options shape", () => {
+    const question: Question<"multiple_choice"> = {
+      id: "generic-mc-1",
+      level: 1,
+      type: "multiple_choice",
+      category: "generic",
+      difficulty: "easy",
+      question: "Which answer is correct?",
+      payload: {
+        choices: ["wrong 1", "correct", "wrong 2", "wrong 3"],
+      },
+      answer: {
+        index: 1,
+      },
+      explanation: "The answer is stored by index in the generic answer field.",
+      reference: "Test 1:1",
+    };
+
+    expect("options" in question).toBe(false);
+    expect(evaluateAnswer(question, 1)).toBe(true);
+    expect(evaluateAnswer(question, 0)).toBe(false);
   });
 
   it("picks released non-classic mode questions end to end", () => {

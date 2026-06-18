@@ -1,10 +1,6 @@
-export type QuestionType =
-  | "multiple_choice"
-  | "true_false"
-  | "fill_blank"
-  | "ordering"
-  | "matching"
-  | "image_quiz";
+export const questionTypes = ["multiple_choice", "true_false", "fill_blank", "ordering", "matching", "image_quiz"] as const;
+
+export type QuestionType = (typeof questionTypes)[number];
 
 export type QuizMode = QuestionType | "boss_battle";
 
@@ -21,74 +17,63 @@ type QuestionBase = {
   reference: string;
 };
 
-export type MultipleChoiceQuestion = QuestionBase & {
-  type: "multiple_choice";
-  payload: {
+export type QuestionPayloadByType = {
+  multiple_choice: {
     choices: [string, string, string, string];
   };
-  answer: {
-    index: number;
-  };
-};
-
-export type TrueFalseQuestion = QuestionBase & {
-  type: "true_false";
-  payload: Record<string, never>;
-  answer: {
-    value: boolean;
-  };
-};
-
-export type FillBlankQuestion = QuestionBase & {
-  type: "fill_blank";
-  payload: {
+  true_false: Record<string, never>;
+  fill_blank: {
     blankLabel?: string;
   };
-  answer: {
-    text: string;
-    accepted?: string[];
-  };
-};
-
-export type OrderingQuestion = QuestionBase & {
-  type: "ordering";
-  payload: {
+  ordering: {
     items: string[];
   };
-  answer: {
-    order: string[];
-  };
-};
-
-export type MatchingQuestion = QuestionBase & {
-  type: "matching";
-  payload: {
+  matching: {
     pairs: Array<{ left: string; right: string }>;
   };
-  answer: {
-    pairs: Array<{ left: string; right: string }>;
-  };
-};
-
-export type ImageQuizQuestion = QuestionBase & {
-  type: "image_quiz";
-  payload: {
+  image_quiz: {
     imageUrl: string;
     choices?: [string, string, string, string];
   };
-  answer: {
+};
+
+export type QuestionAnswerByType = {
+  multiple_choice: {
+    index: number;
+  };
+  true_false: {
+    value: boolean;
+  };
+  fill_blank: {
+    text: string;
+    accepted?: string[];
+  };
+  ordering: {
+    order: string[];
+  };
+  matching: {
+    pairs: Array<{ left: string; right: string }>;
+  };
+  image_quiz: {
     index?: number;
     text?: string;
   };
 };
 
-export type Question =
-  | MultipleChoiceQuestion
-  | TrueFalseQuestion
-  | FillBlankQuestion
-  | OrderingQuestion
-  | MatchingQuestion
-  | ImageQuizQuestion;
+export type Question<TType extends QuestionType = QuestionType> = TType extends QuestionType
+  ? QuestionBase & {
+      type: TType;
+      payload: QuestionPayloadByType[TType];
+      answer: QuestionAnswerByType[TType];
+    }
+  : never;
+
+export type MultipleChoiceQuestion = Question<"multiple_choice">;
+export type TrueFalseQuestion = Question<"true_false">;
+export type FillBlankQuestion = Question<"fill_blank">;
+export type OrderingQuestion = Question<"ordering">;
+export type MatchingQuestion = Question<"matching">;
+export type ImageQuizQuestion = Question<"image_quiz">;
 
 export type SubmittedAnswer =
   | number

@@ -39,6 +39,24 @@ describe("game session logic", () => {
     });
   });
 
+  it("plays a full Classic Level Mode run with migrated multiple choice questions", () => {
+    let session = showQuestion(startLevelSession(1, questionBank, () => 0.42, "multiple_choice"));
+
+    for (let index = 0; index < QUESTIONS_PER_RUN; index += 1) {
+      const currentQuestion = session.questions[session.currentIndex];
+      if (currentQuestion.type !== "multiple_choice") throw new Error("Expected multiple choice question");
+
+      const result = answerCurrentQuestion(session, currentQuestion.answer.index);
+      expect(result.correct).toBe(true);
+      expect(result.session.feedback?.answer).toBe(currentQuestion.payload.choices[currentQuestion.answer.index]);
+
+      session = continueAfterFeedback(result.session);
+    }
+
+    expect(session.screen).toBe("LEVEL_RESULT");
+    expect(session.score).toBe(QUESTIONS_PER_RUN);
+  });
+
   it("continues from feedback to the next question or result", () => {
     const session = showQuestion(startLevelSession(1, questionBank, () => 0.42));
     const currentQuestion = session.questions[0];
