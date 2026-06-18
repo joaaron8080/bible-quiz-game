@@ -33,6 +33,7 @@ export type QuestionPayloadByType = {
   };
   image_quiz: {
     imageUrl: string;
+    imageAlt: string;
     choices?: [string, string, string, string];
   };
 };
@@ -121,9 +122,14 @@ export const releasedQuizModes: Array<{ id: QuizMode; label: string; description
     label: "Matching Quiz",
     description: "Connect Bible people and events into the correct pairs.",
   },
+  {
+    id: "image_quiz",
+    label: "Image Quiz",
+    description: "See an image clue and identify the related Bible story answer.",
+  },
 ];
 
-export const progressQuizModes: QuizMode[] = ["multiple_choice", "true_false", "ordering", "matching"];
+export const progressQuizModes: QuizMode[] = ["multiple_choice", "true_false", "ordering", "matching", "image_quiz"];
 
 export const plannedQuizModes: Array<{ id: QuizMode; label: string; description: string }> = [
   {
@@ -257,10 +263,16 @@ export function evaluateAnswer(question: Question, submitted: SubmittedAnswer) {
     case "matching":
       return isMatchingAnswer(submitted) && matchingEqual(submitted, question.answer.pairs);
     case "image_quiz":
-      if (question.answer.index !== undefined) {
-        return typeof submitted === "number" && submitted === question.answer.index;
+      if (typeof submitted === "number") {
+        return question.answer.index !== undefined && submitted === question.answer.index;
       }
-      return typeof submitted === "string" && normalizeText(submitted) === normalizeText(question.answer.text ?? "");
+      return (
+        typeof submitted === "string" &&
+        [question.answer.text, getCorrectAnswerText(question)]
+          .filter((answer): answer is string => Boolean(answer))
+          .map(normalizeText)
+          .includes(normalizeText(submitted))
+      );
     default:
       return false;
   }

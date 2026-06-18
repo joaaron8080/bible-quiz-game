@@ -214,6 +214,32 @@ describe("game session logic", () => {
     expect(isSessionPassed(session)).toBe(true);
   });
 
+  it("plays a full Image Quiz run through feedback and level result", () => {
+    let session = showQuestion(startLevelSession(1, questionBank, () => 0.42, "image_quiz"));
+
+    expect(session.mode).toBe("image_quiz");
+    expect(session.questions).toHaveLength(QUESTIONS_PER_RUN);
+    expect(session.questions.every((question) => question.type === "image_quiz")).toBe(true);
+
+    for (let index = 0; index < QUESTIONS_PER_RUN; index += 1) {
+      const currentQuestion = session.questions[session.currentIndex];
+      if (currentQuestion.type !== "image_quiz") throw new Error("Expected image quiz question");
+
+      expect(currentQuestion.payload.imageAlt).toEqual(expect.any(String));
+      expect(currentQuestion.payload.imageUrl).toEqual(expect.any(String));
+
+      const result = answerCurrentQuestion(session, index % 2 === 0 ? (currentQuestion.answer.index ?? -1) : currentQuestion.answer.text ?? "");
+      expect(result.correct).toBe(true);
+      expect(result.session.feedback?.answer).toBe(currentQuestion.answer.text);
+
+      session = continueAfterFeedback(result.session);
+    }
+
+    expect(session.screen).toBe("LEVEL_RESULT");
+    expect(session.score).toBe(QUESTIONS_PER_RUN);
+    expect(isSessionPassed(session)).toBe(true);
+  });
+
   it("restarts from level one when all levels are complete", () => {
     const progress = {
       highestLevel: 10,

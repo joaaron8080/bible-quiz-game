@@ -73,6 +73,17 @@ describe("bible quiz logic", () => {
     );
   });
 
+  it("exposes Image Quiz as a released selectable mode", () => {
+    expect(releasedQuizModes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "image_quiz",
+          label: "Image Quiz",
+        }),
+      ]),
+    );
+  });
+
   it("avoids repeating variants from the same fact in one run", () => {
     const selected = pickRandomQuestions(questionBank, 1, 10, () => 0.42);
     const factIds = new Set(selected.map((question) => question.id.replace(/-\d+$/, "")));
@@ -166,15 +177,18 @@ describe("bible quiz logic", () => {
     const fillBlankQuestions = pickRandomQuestions(questionBank, 1, 10, () => 0.42, "fill_blank");
     const orderingQuestions = pickRandomQuestions(questionBank, 1, 10, () => 0.42, "ordering");
     const matchingQuestions = pickRandomQuestions(questionBank, 1, 10, () => 0.42, "matching");
+    const imageQuestions = pickRandomQuestions(questionBank, 1, 10, () => 0.42, "image_quiz");
 
     expect(oxQuestions).toHaveLength(10);
     expect(fillBlankQuestions).toHaveLength(10);
     expect(orderingQuestions).toHaveLength(10);
     expect(matchingQuestions).toHaveLength(10);
+    expect(imageQuestions).toHaveLength(10);
     expect(oxQuestions.every((question) => question.type === "true_false")).toBe(true);
     expect(fillBlankQuestions.every((question) => question.type === "fill_blank")).toBe(true);
     expect(orderingQuestions.every((question) => question.type === "ordering")).toBe(true);
     expect(matchingQuestions.every((question) => question.type === "matching")).toBe(true);
+    expect(imageQuestions.every((question) => question.type === "image_quiz")).toBe(true);
   });
 
   it("evaluates correct and incorrect ordering submissions", () => {
@@ -200,6 +214,22 @@ describe("bible quiz logic", () => {
     expect(evaluateAnswer(matching, Object.fromEntries(matching.answer.pairs.map((pair) => [pair.left, pair.right])))).toBe(true);
     expect(evaluateAnswer(matching, mismatchedPairs)).toBe(false);
     expect(evaluateAnswer(matching, partialPairs)).toBe(false);
+  });
+
+  it("renders image quiz payload assumptions and evaluates choice or typed answers", () => {
+    const imageQuestion = questionBank.find((question) => question.type === "image_quiz" && question.level === 1);
+    if (!imageQuestion || imageQuestion.type !== "image_quiz") throw new Error("Expected image quiz question");
+
+    expect(imageQuestion.payload.imageUrl).toMatch(/^data:image\/svg\+xml/);
+    expect(imageQuestion.payload.imageAlt).toEqual(expect.any(String));
+    expect(imageQuestion.payload.imageAlt.length).toBeGreaterThan(10);
+    expect(imageQuestion.payload.choices).toHaveLength(4);
+    expect(imageQuestion.answer.index).toEqual(expect.any(Number));
+    expect(imageQuestion.answer.text).toEqual(expect.any(String));
+
+    expect(evaluateAnswer(imageQuestion, imageQuestion.answer.index ?? -1)).toBe(true);
+    expect(evaluateAnswer(imageQuestion, ` ${imageQuestion.answer.text} `)).toBe(true);
+    expect(evaluateAnswer(imageQuestion, "not the answer")).toBe(false);
   });
 
   it("saves completed level progress", () => {

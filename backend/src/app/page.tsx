@@ -268,6 +268,7 @@ export default function Home() {
             />
             <div className="rounded-lg border border-gold/30 bg-white/70 p-5 shadow-sm sm:p-7">
               <p className="mb-3 text-sm font-bold text-gold">{meta.title}</p>
+              {currentQuestion.type === "image_quiz" && <ImagePrompt question={currentQuestion} />}
               <h2 className="font-serif text-2xl font-bold leading-relaxed sm:text-3xl">{currentQuestion.question}</h2>
             </div>
             <QuestionAnswerControls question={currentQuestion} onAnswer={answerQuestion} />
@@ -383,9 +384,96 @@ function QuestionAnswerControls({
     return <MatchingAnswer question={question} onAnswer={onAnswer} />;
   }
 
+  if (question.type === "image_quiz") {
+    return <ImageQuizAnswer question={question} onAnswer={onAnswer} />;
+  }
+
   return (
     <div className="rounded-lg border border-gold/25 bg-white/70 p-5 text-center text-sm font-bold text-brown-dark/65">
       이 모드는 다음 릴리스에서 플레이할 수 있습니다.
+    </div>
+  );
+}
+
+function ImagePrompt({ question }: { question: Extract<Question, { type: "image_quiz" }> }) {
+  const [hasImageError, setHasImageError] = useState(false);
+
+  useEffect(() => {
+    setHasImageError(false);
+  }, [question.id, question.payload.imageUrl]);
+
+  if (hasImageError) {
+    return (
+      <div
+        className="mb-5 grid min-h-56 place-items-center rounded-lg border border-dashed border-gold/45 bg-cream-dark/70 px-5 text-center"
+        role="img"
+        aria-label={question.payload.imageAlt}
+      >
+        <div>
+          <p className="font-serif text-xl font-bold">Image clue unavailable</p>
+          <p className="mt-2 text-sm font-bold text-brown-dark/65">{question.payload.imageAlt}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      alt={question.payload.imageAlt}
+      className="mb-5 aspect-video w-full rounded-lg border border-gold/25 bg-cream-dark object-cover shadow-sm"
+      onError={() => setHasImageError(true)}
+      src={question.payload.imageUrl}
+    />
+  );
+}
+
+function ImageQuizAnswer({
+  question,
+  onAnswer,
+}: {
+  question: Extract<Question, { type: "image_quiz" }>;
+  onAnswer: (answer: SubmittedAnswer) => void;
+}) {
+  const [value, setValue] = useState("");
+
+  useEffect(() => {
+    setValue("");
+  }, [question.id]);
+
+  return (
+    <div className="grid gap-4">
+      {question.payload.choices && (
+        <div className="grid gap-3">
+          {question.payload.choices.map((option, index) => (
+            <button className="answer-button" key={`${question.id}-${option}`} onClick={() => onAnswer(index)} type="button">
+              <span>{String.fromCharCode(65 + index)}</span>
+              {option}
+            </button>
+          ))}
+        </div>
+      )}
+      <form
+        className="grid gap-3 rounded-lg border border-gold/20 bg-white/55 p-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onAnswer(value);
+        }}
+      >
+        <label className="text-sm font-black uppercase text-brown-dark/55" htmlFor={`image-answer-${question.id}`}>
+          Type answer
+        </label>
+        <input
+          className="min-h-14 rounded-lg border border-gold/25 bg-white/80 px-4 text-lg font-bold outline-none transition focus:border-gold"
+          id={`image-answer-${question.id}`}
+          onChange={(event) => setValue(event.target.value)}
+          placeholder="Enter the Bible story answer"
+          value={value}
+        />
+        <button className="primary-button w-full" disabled={!value.trim()} type="submit">
+          Submit typed answer
+        </button>
+      </form>
     </div>
   );
 }
