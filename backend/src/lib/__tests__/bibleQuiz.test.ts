@@ -3,12 +3,14 @@ import {
   completeLevel,
   defaultProgress,
   evaluateAnswer,
+  getModeProgress,
   isLevelPassed,
-  loadProgress,
+  loadProgressMap,
   pickRandomQuestions,
   questionTypes,
   releasedQuizModes,
-  saveProgress,
+  saveProgressMap,
+  setModeProgress,
   type Question,
 } from "../bibleQuiz";
 import { questionBank } from "../questionBank";
@@ -107,26 +109,31 @@ describe("bible quiz logic", () => {
 
   it("evaluates multiple choice, OX true and false, and fill blank answers", () => {
     const multipleChoice = questionBank.find((question) => question.id === "L1-01-1");
-    const trueAnswer = questionBank.find((question) => question.id === "L1-01-tf-1");
-    const falseAnswer = questionBank.find((question) => question.id === "L1-01-tf-2");
-    const fillBlank = questionBank.find((question) => question.id === "L1-01-blank-1");
-
-    expect(multipleChoice?.type).toBe("multiple_choice");
-    expect(trueAnswer?.type).toBe("true_false");
-    expect(falseAnswer?.type).toBe("true_false");
-    expect(fillBlank?.type).toBe("fill_blank");
+    const trueAnswer = questionBank.find((question) => question.type === "true_false" && question.answer.value === true);
+    const falseAnswer = questionBank.find((question) => question.type === "true_false" && question.answer.value === false);
+    const fillBlank = questionBank.find((question) => question.type === "fill_blank" && question.level === 1);
 
     if (!multipleChoice || multipleChoice.type !== "multiple_choice") throw new Error("Expected multiple choice");
     if (!trueAnswer || trueAnswer.type !== "true_false") throw new Error("Expected OX true question");
     if (!falseAnswer || falseAnswer.type !== "true_false") throw new Error("Expected OX false question");
     if (!fillBlank || fillBlank.type !== "fill_blank") throw new Error("Expected fill blank");
 
-    expect(multipleChoice && evaluateAnswer(multipleChoice, multipleChoice.answer.index)).toBe(true);
+    expect(evaluateAnswer(multipleChoice, multipleChoice.answer.index)).toBe(true);
     expect(evaluateAnswer(trueAnswer, true)).toBe(true);
     expect(evaluateAnswer(trueAnswer, false)).toBe(false);
     expect(evaluateAnswer(falseAnswer, false)).toBe(true);
     expect(evaluateAnswer(falseAnswer, true)).toBe(false);
-    expect(fillBlank && evaluateAnswer(fillBlank, ` ${fillBlank.answer.text} `)).toBe(true);
+    expect(evaluateAnswer(fillBlank, ` ${fillBlank.answer.text} `)).toBe(true);
+  });
+
+  it("provides at least ten dedicated questions per type for every level", () => {
+    const dedicatedTypes = ["true_false", "fill_blank", "ordering", "matching", "image_quiz"] as const;
+    for (const type of dedicatedTypes) {
+      for (let level = 1; level <= 10; level += 1) {
+        const count = questionBank.filter((question) => question.type === type && question.level === level).length;
+        expect(count).toBeGreaterThanOrEqual(10);
+      }
+    }
   });
 
   it("represents migrated multiple choice questions through type, payload, and answer", () => {
@@ -220,7 +227,7 @@ describe("bible quiz logic", () => {
     const imageQuestion = questionBank.find((question) => question.type === "image_quiz" && question.level === 1);
     if (!imageQuestion || imageQuestion.type !== "image_quiz") throw new Error("Expected image quiz question");
 
-    expect(imageQuestion.payload.imageUrl).toMatch(/^data:image\/svg\+xml/);
+    expect(imageQuestion.payload.imageUrl).toMatch(/^\/images\/quiz\/L\d+_\d{2}\.png$/);
     expect(imageQuestion.payload.imageAlt).toEqual(expect.any(String));
     expect(imageQuestion.payload.imageAlt.length).toBeGreaterThan(10);
     expect(imageQuestion.payload.choices).toHaveLength(4);
@@ -240,17 +247,24 @@ describe("bible quiz logic", () => {
     expect(progress.completedLevels).toEqual([1]);
   });
 
-  it("loads saved progress from localStorage", () => {
+  it("saves and loads per-mode progress from localStorage independently", () => {
     const storage = window.localStorage;
     storage.clear();
 
-    const progress = completeLevel(defaultProgress, 3);
-    saveProgress(progress, storage);
+    const map = setModeProgress({}, "true_false", completeLevel(defaultProgress, 3));
+    saveProgressMap(map, storage);
 
-    expect(loadProgress(storage)).toEqual({
+    const loaded = loadProgressMap(storage);
+
+    expect(getModeProgress(loaded, "true_false")).toEqual({
       highestLevel: 3,
       currentLevel: 4,
       completedLevels: [3],
+    });
+    expect(getModeProgress(loaded, "ordering")).toEqual({
+      highestLevel: 0,
+      currentLevel: 1,
+      completedLevels: [],
     });
   });
 });

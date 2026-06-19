@@ -1,9 +1,8 @@
-import { DEFAULT_QUIZ_MODE, QUESTIONS_PER_RUN, completeLevel, defaultProgress } from "../bibleQuiz";
+import { DEFAULT_QUIZ_MODE, QUESTIONS_PER_RUN, defaultProgress } from "../bibleQuiz";
 import {
   answerCurrentQuestion,
   continueAfterFeedback,
   isSessionPassed,
-  resumeSession,
   showQuestion,
   startLevelSession,
   startNextProgressLevelSession,
@@ -11,10 +10,10 @@ import {
 import { questionBank } from "../questionBank";
 
 describe("game session logic", () => {
-  it("starts a level session with intro screen and fresh score", () => {
+  it("starts a level session directly on the question screen with fresh score", () => {
     const session = startLevelSession(2, questionBank, () => 0.42);
 
-    expect(session.screen).toBe("LEVEL_INTRO");
+    expect(session.screen).toBe("QUESTION");
     expect(session.mode).toBe(DEFAULT_QUIZ_MODE);
     expect(session.level).toBe(2);
     expect(session.questions).toHaveLength(QUESTIONS_PER_RUN);
@@ -89,14 +88,6 @@ describe("game session logic", () => {
     };
 
     expect(continueAfterFeedback(finalFeedback).screen).toBe("LEVEL_RESULT");
-  });
-
-  it("resumes saved progress into the current level intro", () => {
-    const progress = completeLevel(defaultProgress, 3);
-    const session = resumeSession(progress, questionBank, () => 0.42);
-
-    expect(session.screen).toBe("LEVEL_INTRO");
-    expect(session.level).toBe(4);
   });
 
   it("plays a full OX Quiz run through feedback and level result", () => {

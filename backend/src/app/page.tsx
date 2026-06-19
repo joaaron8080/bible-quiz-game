@@ -1,20 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   GameProgress,
+  ModeProgressMap,
   QUESTIONS_PER_RUN,
   TOTAL_LEVELS,
-  DEFAULT_QUIZ_MODE,
   completeLevel,
-  defaultProgress,
+  getModeProgress,
   levelMeta,
-  loadProgress,
-  plannedQuizModes,
-  progressQuizModes,
-  resetProgress,
+  loadProgressMap,
   releasedQuizModes,
-  saveProgress,
+  resetModeProgress,
+  saveProgressMap,
+  setModeProgress,
   type Question,
   type QuizMode,
   type SubmittedAnswer,
@@ -24,49 +23,47 @@ import {
   continueAfterFeedback,
   defaultSession,
   getCurrentQuestion,
-  goHome,
+  goToModeHome,
+  goToModeSelect,
   isSessionPassed,
-  resumeSession,
+  selectMode,
   showCelebration,
-  showQuestion,
   startLevelSession,
-  startNextProgressLevelSession,
 } from "@/lib/gameSession";
 import { questionBank } from "@/lib/questionBank";
 import { sounds } from "@/lib/sounds";
 
 export default function Home() {
   const [session, setSession] = useState(defaultSession);
-  const [progress, setProgress] = useState<GameProgress>(defaultProgress);
-  const [selectedMode, setSelectedMode] = useState<QuizMode>(DEFAULT_QUIZ_MODE);
+  const [progressMap, setProgressMap] = useState<ModeProgressMap>({});
   const [hydrated, setHydrated] = useState(false);
 
   const meta = levelMeta[session.level - 1];
   const currentQuestion = getCurrentQuestion(session);
   const passed = isSessionPassed(session);
-  const completedAll = progress.completedLevels.length === TOTAL_LEVELS;
+  const modeProgress = getModeProgress(progressMap, session.mode);
+  const modeCompleted = modeProgress.completedLevels.length;
+  const modeCompletedAll = modeCompleted === TOTAL_LEVELS;
+  const startLevel = modeCompletedAll ? 1 : modeProgress.currentLevel;
 
   useEffect(() => {
-    const stored = loadProgress(window.localStorage);
-    setProgress(stored);
-    setSession(resumeSession(stored, questionBank));
+    setProgressMap(loadProgressMap(window.localStorage));
     setHydrated(true);
   }, []);
 
-  const stats = useMemo(() => {
-    const completed = progress.completedLevels.length;
-    return {
-      completed,
-      percent: Math.round((completed / TOTAL_LEVELS) * 100),
-    };
-  }, [progress.completedLevels.length]);
+  function enterMode(mode: QuizMode) {
+    setSession(selectMode(mode, getModeProgress(progressMap, mode).currentLevel));
+  }
 
-  function beginLevel(targetLevel?: number, mode = selectedMode) {
-    setSession(
-      targetLevel === undefined
-        ? startNextProgressLevelSession(progress, questionBank, Math.random, mode)
-        : startLevelSession(targetLevel, questionBank, Math.random, mode),
-    );
+  function beginLevel(level: number) {
+    setSession(startLevelSession(level, questionBank, Math.random, session.mode));
+  }
+
+  function restartMode() {
+    const next = resetModeProgress(progressMap, session.mode);
+    setProgressMap(next);
+    saveProgressMap(next, window.localStorage);
+    setSession(startLevelSession(1, questionBank, Math.random, session.mode));
   }
 
   function answerQuestion(answer: SubmittedAnswer) {
@@ -81,176 +78,114 @@ export default function Home() {
   }
 
   function skipFeedback() {
+    sounds.skipClick();
     setSession(continueAfterFeedback(session));
   }
 
   function resolveLevelResult() {
     if (!passed) {
-      beginLevel(session.level, session.mode);
+      beginLevel(session.level);
       return;
     }
 
-    if (progressQuizModes.includes(session.mode)) {
-      const next = completeLevel(progress, session.level);
-      setProgress(next);
-      saveProgress(next, window.localStorage);
-    }
+    const next = setModeProgress(progressMap, session.mode, completeLevel(modeProgress, session.level));
+    setProgressMap(next);
+    saveProgressMap(next, window.localStorage);
 
-    if (session.level === TOTAL_LEVELS) {
-      sounds.finalFanfare();
-    } else {
-      sounds.fanfare();
-    }
+    sounds.levelup();
     setSession(showCelebration(session));
   }
 
   function nextLevel() {
-    if (!progressQuizModes.includes(session.mode) || session.level >= TOTAL_LEVELS) {
-      setSession(goHome(session));
+    if (session.level >= TOTAL_LEVELS) {
+      setSession(goToModeHome(session));
       return;
     }
     beginLevel(session.level + 1);
-  }
-
-  function handleReset() {
-    const next = resetProgress(window.localStorage);
-    setProgress(next);
-    setSession(defaultSession);
   }
 
   return (
     <main className="min-h-screen bg-cream text-brown-dark">
       <div className="mx-auto flex min-h-screen w-full max-w-5xl flex-col px-5 py-5 sm:px-8">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-gold/25 pb-4">
-          <button className="flex items-center gap-3 text-left" onClick={() => setSession(goHome(session))}>
+          <button className="flex items-center gap-3 text-left" onClick={() => setSession(goToModeSelect(session))}>
             <span className="grid h-11 w-11 place-items-center rounded-full border border-gold/50 bg-cream-dark text-xl text-gold shadow-sm">
               ✦
             </span>
             <span>
               <span className="block font-serif text-xl font-bold">성경 퀴즈 게임</span>
-              <span className="block text-sm text-brown-dark/65">구약에서 신약까지 10단계</span>
+              <span className="block text-sm text-brown-dark/65">유형을 골라 1단계부터 10단계까지</span>
             </span>
           </button>
-          <div className="flex items-center gap-2">
-            <div className="rounded-md border border-gold/30 bg-white/45 px-3 py-2 text-sm">
-              완료 {stats.completed}/{TOTAL_LEVELS}
+          {session.screen !== "MODE_SELECT" && (
+            <div className="flex items-center gap-2">
+              <div className="rounded-md border border-gold/30 bg-white/45 px-3 py-2 text-sm">
+                {getModeLabel(session.mode)} 완료 {modeCompleted}/{TOTAL_LEVELS}
+              </div>
+              <button
+                className="rounded-md border border-brown-dark/20 px-3 py-2 text-sm font-semibold transition hover:bg-cream-dark"
+                onClick={() => setSession(goToModeSelect(session))}
+              >
+                모드 선택
+              </button>
             </div>
-            <button
-              className="rounded-md border border-brown-dark/20 px-3 py-2 text-sm font-semibold transition hover:bg-cream-dark"
-              onClick={handleReset}
-            >
-              초기화
-            </button>
-          </div>
+          )}
         </header>
 
-        {session.screen === "HOME" && (
-          <section className="grid flex-1 items-center gap-8 py-8 lg:grid-cols-[1.05fr_0.95fr]">
-            <div className="space-y-7">
-              <div className="space-y-4">
-                <p className="text-sm font-bold uppercase text-gold">Bible Quiz Journey</p>
-                <h1 className="font-serif text-4xl font-extrabold leading-tight sm:text-6xl">
-                  단계별로 익히는 성경 지식 퀴즈
-                </h1>
-                <p className="max-w-2xl text-lg leading-8 text-brown-dark/75">
-                  구약의 핵심 사건에서 신약 서신서와 요한계시록까지, 각 단계마다 10문제를 풀고
-                  7문제 이상 맞히면 다음 단계가 열립니다.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-3">
-                <button className="primary-button" disabled={!hydrated} onClick={() => beginLevel()}>
-                  {completedAll ? "1단계부터 다시 도전" : `${progress.currentLevel}단계 시작`}
-                </button>
-                <button className="secondary-button" onClick={handleReset}>
-                  처음부터 시작
-                </button>
-              </div>
-              <div className="space-y-3">
-                <p className="text-sm font-bold uppercase text-brown-dark/60">Quiz Mode</p>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {releasedQuizModes.map((mode) => (
-                    <button
-                      className={`rounded-lg border p-4 text-left shadow-sm transition ${
-                        selectedMode === mode.id
-                          ? "border-gold bg-white/80"
-                          : "border-gold/20 bg-white/35 hover:bg-white/60"
-                      }`}
-                      aria-pressed={selectedMode === mode.id}
-                      key={mode.id}
-                      onClick={() => setSelectedMode(mode.id)}
-                    >
-                      <span className="flex items-center justify-between gap-3 font-serif text-lg font-bold">
-                        {mode.label}
-                        {selectedMode === mode.id && (
-                          <span className="rounded-full bg-gold px-2 py-1 text-xs font-black uppercase text-white">
-                            Active
-                          </span>
-                        )}
-                      </span>
-                      <span className="mt-1 block text-sm leading-6 text-brown-dark/65">{mode.description}</span>
-                    </button>
-                  ))}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {plannedQuizModes
-                    .filter((mode) => !releasedQuizModes.some((releasedMode) => releasedMode.id === mode.id))
-                    .map((mode) => (
-                      <span
-                        className="rounded-full border border-brown-dark/10 bg-white/35 px-3 py-1 text-xs font-bold text-brown-dark/55"
-                        key={mode.id}
-                      >
-                        {mode.label} planned
-                      </span>
-                    ))}
-                </div>
-              </div>
-              <ProgressBar percent={stats.percent} label={`전체 진행률 ${stats.percent}%`} />
+        {session.screen === "MODE_SELECT" && (
+          <section className="flex-1 space-y-7 py-8">
+            <div className="space-y-4">
+              <p className="text-sm font-bold uppercase text-gold">Quiz Mode</p>
+              <h1 className="font-serif text-4xl font-extrabold leading-tight sm:text-5xl">
+                먼저 퀴즈 유형을 선택하세요
+              </h1>
+              <p className="max-w-2xl text-lg leading-8 text-brown-dark/75">
+                유형을 고르면 해당 유형으로 1단계부터 10단계까지 진행합니다. 단계마다 10문제 중 7문제 이상
+                맞히면 다음 단계가 열립니다.
+              </p>
             </div>
-
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-              {levelMeta.map((item) => {
-                const done = progress.completedLevels.includes(item.level);
-                const active = item.level === progress.currentLevel && !completedAll;
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {releasedQuizModes.map((mode) => {
+                const progress = getModeProgress(progressMap, mode.id);
+                const completed = progress.completedLevels.length;
                 return (
-                  <div
-                    className={`rounded-lg border p-4 shadow-sm ${
-                      active
-                        ? "border-gold bg-white/70"
-                        : done
-                          ? "border-emerald-700/25 bg-emerald-50/70"
-                          : "border-gold/20 bg-white/35"
-                    }`}
-                    key={item.level}
+                  <button
+                    className="flex flex-col gap-3 rounded-lg border border-gold/20 bg-white/40 p-5 text-left shadow-sm transition hover:border-gold hover:bg-white/70 disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={!hydrated}
+                    key={mode.id}
+                    onClick={() => enterMode(mode.id)}
                   >
-                    <div className="flex items-center justify-between gap-3">
-                      <strong>{item.level}단계</strong>
-                      <span className="rounded-full bg-cream-dark px-2.5 py-1 text-xs font-bold text-brown-dark/70">
-                        {done ? "완료" : item.difficulty}
+                    <span className="flex items-center justify-between gap-3 font-serif text-xl font-bold">
+                      {mode.label}
+                      <span className="rounded-full bg-cream-dark px-2.5 py-1 text-xs font-black text-brown-dark/70">
+                        {completed}/{TOTAL_LEVELS}
                       </span>
-                    </div>
-                    <p className="mt-2 font-serif text-lg font-bold">{item.title}</p>
-                    <p className="text-sm text-brown-dark/65">{item.scope}</p>
-                  </div>
+                    </span>
+                    <span className="block text-sm leading-6 text-brown-dark/65">{mode.description}</span>
+                    <StageProgressGraph progress={progress} compact />
+                  </button>
                 );
               })}
             </div>
           </section>
         )}
 
-        {session.screen === "LEVEL_INTRO" && (
+        {session.screen === "MODE_HOME" && (
           <CenteredPanel>
-            <p className="text-sm font-bold text-gold">
-              {getModeLabel(session.mode)} · {meta.difficulty} · {meta.scope}
-            </p>
+            <p className="text-sm font-bold text-gold">{getModeLabel(session.mode)}</p>
             <h2 className="font-serif text-4xl font-extrabold">
-              {session.level}단계: {meta.title}
+              {modeCompletedAll ? "모든 단계를 완료했습니다" : `${startLevel}단계부터 진행`}
             </h2>
-            <p className="text-brown-dark/75">
-              10문제가 출제됩니다. 7문제 이상 맞히면 통과합니다.
-            </p>
-            <button className="primary-button" onClick={() => setSession(showQuestion(session))}>
-              문제 풀기
-            </button>
+            <p className="text-brown-dark/75">현재까지 {modeCompleted}/{TOTAL_LEVELS}단계 완료</p>
+            <StageProgressGraph progress={modeProgress} />
+            <div className="flex flex-wrap justify-center gap-3 pt-1">
+              <button className="primary-button" disabled={!hydrated} onClick={() => beginLevel(startLevel)}>
+                {modeCompletedAll ? "1단계부터 다시 도전" : `${startLevel}단계 시작`}
+              </button>
+              <button className="secondary-button" onClick={restartMode}>
+                처음부터 시작
+              </button>
+            </div>
           </CenteredPanel>
         )}
 
@@ -328,7 +263,7 @@ export default function Home() {
                 : `${session.level + 1}단계에서 더 깊은 성경 지식을 확인해 보세요.`}
             </p>
             <button className="primary-button" onClick={nextLevel}>
-              {!progressQuizModes.includes(session.mode) || session.level === TOTAL_LEVELS ? "홈으로 이동" : "다음 단계"}
+              {session.level === TOTAL_LEVELS ? "모드 홈으로" : "다음 단계"}
             </button>
           </CenteredPanel>
         )}
@@ -709,7 +644,7 @@ function FillBlankAnswer({ onAnswer }: { onAnswer: (answer: SubmittedAnswer) => 
 }
 
 function getModeLabel(mode: QuizMode) {
-  return [...releasedQuizModes, ...plannedQuizModes].find((item) => item.id === mode)?.label ?? "Quiz";
+  return releasedQuizModes.find((item) => item.id === mode)?.label ?? "Quiz";
 }
 
 function CenteredPanel({ children }: { children: React.ReactNode }) {
@@ -727,6 +662,31 @@ function Status({ label, value }: { label: string; value: string }) {
     <div className="rounded-md border border-gold/25 bg-white/55 px-2 py-2 text-center sm:px-4 sm:py-3">
       <p className="text-xs font-bold text-brown-dark/55">{label}</p>
       <p className="text-lg font-black sm:text-xl">{value}</p>
+    </div>
+  );
+}
+
+function StageProgressGraph({ progress, compact = false }: { progress: GameProgress; compact?: boolean }) {
+  const completed = progress.completedLevels.length;
+  const label = `단계 진행 ${completed}/${TOTAL_LEVELS}`;
+
+  return (
+    <div className="w-full space-y-1.5">
+      {!compact && <p className="text-xs font-bold uppercase text-brown-dark/55">{label}</p>}
+      <div aria-label={label} className="flex gap-1" role="img">
+        {Array.from({ length: TOTAL_LEVELS }, (_, index) => {
+          const level = index + 1;
+          const done = progress.completedLevels.includes(level);
+          const current = !done && completed < TOTAL_LEVELS && level === progress.currentLevel;
+          return (
+            <span
+              className={`h-2.5 flex-1 rounded-full ${done ? "bg-gold" : current ? "bg-gold/40" : "bg-cream-dark"}`}
+              key={level}
+              title={`${level}단계${done ? " 완료" : current ? " 진행 예정" : ""}`}
+            />
+          );
+        })}
+      </div>
     </div>
   );
 }

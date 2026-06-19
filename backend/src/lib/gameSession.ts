@@ -12,7 +12,7 @@ import {
   type SubmittedAnswer,
 } from "./bibleQuiz";
 
-export type GameScreen = "HOME" | "LEVEL_INTRO" | "QUESTION" | "FEEDBACK" | "LEVEL_RESULT" | "CELEBRATION";
+export type GameScreen = "MODE_SELECT" | "MODE_HOME" | "QUESTION" | "FEEDBACK" | "LEVEL_RESULT" | "CELEBRATION";
 
 export type AnswerFeedback = {
   correct: boolean;
@@ -37,7 +37,7 @@ export type AnswerResult = {
 };
 
 export const defaultSession: GameSession = {
-  screen: "HOME",
+  screen: "MODE_SELECT",
   mode: DEFAULT_QUIZ_MODE,
   level: 1,
   questions: [],
@@ -46,14 +46,28 @@ export const defaultSession: GameSession = {
   feedback: null,
 };
 
-export function resumeSession(progress: GameProgress, questionBank: Question[], random = Math.random): GameSession {
-  if (progress.highestLevel > 0 && progress.completedLevels.length < TOTAL_LEVELS) {
-    return startLevelSession(progress.currentLevel, questionBank, random, DEFAULT_QUIZ_MODE);
-  }
+export function goToModeSelect(session: GameSession): GameSession {
+  return {
+    ...session,
+    screen: "MODE_SELECT",
+    feedback: null,
+  };
+}
 
+export function selectMode(mode: QuizMode, currentLevel = 1): GameSession {
   return {
     ...defaultSession,
-    level: progress.currentLevel,
+    screen: "MODE_HOME",
+    mode,
+    level: clampLevel(currentLevel),
+  };
+}
+
+export function goToModeHome(session: GameSession): GameSession {
+  return {
+    ...session,
+    screen: "MODE_HOME",
+    feedback: null,
   };
 }
 
@@ -76,7 +90,7 @@ export function startLevelSession(
   const safeLevel = clampLevel(level);
 
   return {
-    screen: "LEVEL_INTRO",
+    screen: "QUESTION",
     mode,
     level: safeLevel,
     questions: pickRandomQuestions(questionBank, safeLevel, QUESTIONS_PER_RUN, random, mode),
@@ -141,13 +155,6 @@ export function showCelebration(session: GameSession): GameSession {
   return {
     ...session,
     screen: "CELEBRATION",
-  };
-}
-
-export function goHome(session: GameSession): GameSession {
-  return {
-    ...session,
-    screen: "HOME",
   };
 }
 

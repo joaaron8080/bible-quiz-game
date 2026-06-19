@@ -93,7 +93,7 @@ export type GameProgress = {
 export const TOTAL_LEVELS = 10;
 export const QUESTIONS_PER_RUN = 10;
 export const PASSING_SCORE = 7;
-export const STORAGE_KEY = "bible-quiz-progress-v1";
+export const STORAGE_KEY = "bible-quiz-progress-v2";
 export const DEFAULT_QUIZ_MODE: QuizMode = "multiple_choice";
 
 export const releasedQuizModes: Array<{ id: QuizMode; label: string; description: string }> = [
@@ -115,21 +115,21 @@ export const releasedQuizModes: Array<{ id: QuizMode; label: string; description
   {
     id: "ordering",
     label: "Ordering Quiz",
-    description: "Arrange Bible events in the correct flow.",
+    description: "성경에 나오는 사건들을 올바른 순서대로 배열하세요.",
   },
   {
     id: "matching",
     label: "Matching Quiz",
-    description: "Connect Bible people and events into the correct pairs.",
+    description: "성경에 등장하는 인물과 사건을 올바른 쌍으로 연결하세요.",
   },
   {
     id: "image_quiz",
     label: "Image Quiz",
-    description: "See an image clue and identify the related Bible story answer.",
+    description: "그림 단서를 보고 관련 성경 이야기의 정답을 맞혀보세요.",
   },
 ];
 
-export const progressQuizModes: QuizMode[] = ["multiple_choice", "true_false", "ordering", "matching", "image_quiz"];
+export const progressQuizModes: QuizMode[] = releasedQuizModes.map((mode) => mode.id);
 
 export const plannedQuizModes: Array<{ id: QuizMode; label: string; description: string }> = [
   {
@@ -400,24 +400,44 @@ export function normalizeProgress(value: unknown): GameProgress {
   };
 }
 
-export function loadProgress(storage?: Storage): GameProgress {
-  if (!storage) return defaultProgress;
+export type ModeProgressMap = Partial<Record<QuizMode, GameProgress>>;
+
+export function normalizeProgressMap(value: unknown): ModeProgressMap {
+  if (!value || typeof value !== "object") return {};
+  const entries = Object.entries(value as Record<string, unknown>).filter(([mode]) =>
+    progressQuizModes.includes(mode as QuizMode),
+  );
+
+  return Object.fromEntries(entries.map(([mode, progress]) => [mode, normalizeProgress(progress)]));
+}
+
+export function loadProgressMap(storage?: Storage): ModeProgressMap {
+  if (!storage) return {};
   try {
     const raw = storage.getItem(STORAGE_KEY);
-    return raw ? normalizeProgress(JSON.parse(raw)) : defaultProgress;
+    return raw ? normalizeProgressMap(JSON.parse(raw)) : {};
   } catch {
-    return defaultProgress;
+    return {};
   }
 }
 
-export function saveProgress(progress: GameProgress, storage?: Storage) {
+export function saveProgressMap(map: ModeProgressMap, storage?: Storage) {
   if (!storage) return;
-  storage.setItem(STORAGE_KEY, JSON.stringify(progress));
+  storage.setItem(STORAGE_KEY, JSON.stringify(map));
 }
 
-export function resetProgress(storage?: Storage) {
-  storage?.removeItem(STORAGE_KEY);
-  return defaultProgress;
+export function getModeProgress(map: ModeProgressMap, mode: QuizMode): GameProgress {
+  return normalizeProgress(map[mode]);
+}
+
+export function setModeProgress(map: ModeProgressMap, mode: QuizMode, progress: GameProgress): ModeProgressMap {
+  return { ...map, [mode]: progress };
+}
+
+export function resetModeProgress(map: ModeProgressMap, mode: QuizMode): ModeProgressMap {
+  const next = { ...map };
+  delete next[mode];
+  return next;
 }
 
 function clampLevel(level: number, min: number) {
