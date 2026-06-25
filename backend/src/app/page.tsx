@@ -4,9 +4,11 @@ import { useEffect, useState } from "react";
 import {
   GameProgress,
   ModeProgressMap,
+  MAX_WRONG_ANSWERS,
   QUESTIONS_PER_RUN,
   TOTAL_LEVELS,
   completeLevel,
+  getModeLevelCount,
   getModeProgress,
   levelMeta,
   loadProgressMap,
@@ -31,19 +33,22 @@ import {
   startLevelSession,
 } from "@/lib/gameSession";
 import { questionBank } from "@/lib/questionBank";
-import { sounds } from "@/lib/sounds";
+import { preloadSounds, sounds } from "@/lib/sounds";
 
 export default function Home() {
   const [session, setSession] = useState(defaultSession);
   const [progressMap, setProgressMap] = useState<ModeProgressMap>({});
   const [hydrated, setHydrated] = useState(false);
+  const [confirmRestart, setConfirmRestart] = useState(false);
 
   const meta = levelMeta[session.level - 1];
   const currentQuestion = getCurrentQuestion(session);
   const passed = isSessionPassed(session);
+  const failedEarly = session.wrong >= MAX_WRONG_ANSWERS;
+  const levelCount = getModeLevelCount(session.mode);
   const modeProgress = getModeProgress(progressMap, session.mode);
   const modeCompleted = modeProgress.completedLevels.length;
-  const modeCompletedAll = modeCompleted === TOTAL_LEVELS;
+  const modeCompletedAll = modeCompleted === levelCount;
   const startLevel = modeCompletedAll ? 1 : modeProgress.currentLevel;
 
   useEffect(() => {
@@ -56,6 +61,7 @@ export default function Home() {
   }
 
   function beginLevel(level: number) {
+    preloadSounds();
     setSession(startLevelSession(level, questionBank, Math.random, session.mode));
   }
 
@@ -63,22 +69,23 @@ export default function Home() {
     const next = resetModeProgress(progressMap, session.mode);
     setProgressMap(next);
     saveProgressMap(next, window.localStorage);
+    setConfirmRestart(false);
     setSession(startLevelSession(1, questionBank, Math.random, session.mode));
   }
 
   function answerQuestion(answer: SubmittedAnswer) {
     const result = answerCurrentQuestion(session, answer);
-    setSession(result.session);
 
     if (result.correct) {
       sounds.correct();
+      setSession(continueAfterFeedback(result.session));
     } else {
       sounds.wrong();
+      setSession(result.session);
     }
   }
 
   function skipFeedback() {
-    sounds.skipClick();
     setSession(continueAfterFeedback(session));
   }
 
@@ -88,7 +95,7 @@ export default function Home() {
       return;
     }
 
-    const next = setModeProgress(progressMap, session.mode, completeLevel(modeProgress, session.level));
+    const next = setModeProgress(progressMap, session.mode, completeLevel(modeProgress, session.level, levelCount));
     setProgressMap(next);
     saveProgressMap(next, window.localStorage);
 
@@ -97,7 +104,7 @@ export default function Home() {
   }
 
   function nextLevel() {
-    if (session.level >= TOTAL_LEVELS) {
+    if (session.level >= levelCount) {
       setSession(goToModeHome(session));
       return;
     }
@@ -120,7 +127,7 @@ export default function Home() {
           {session.screen !== "MODE_SELECT" && (
             <div className="flex items-center gap-2">
               <div className="rounded-md border border-gold/30 bg-white/45 px-3 py-2 text-sm">
-                {getModeLabel(session.mode)} 완료 {modeCompleted}/{TOTAL_LEVELS}
+                {getModeLabel(session.mode)} 완료 {modeCompleted}/{levelCount}
               </div>
               <button
                 className="rounded-md border border-brown-dark/20 px-3 py-2 text-sm font-semibold transition hover:bg-cream-dark"
@@ -148,6 +155,7 @@ export default function Home() {
               {releasedQuizModes.map((mode) => {
                 const progress = getModeProgress(progressMap, mode.id);
                 const completed = progress.completedLevels.length;
+                const modeLevels = getModeLevelCount(mode.id);
                 return (
                   <button
                     className="flex flex-col gap-3 rounded-lg border border-gold/20 bg-white/40 p-5 text-left shadow-sm transition hover:border-gold hover:bg-white/70 disabled:cursor-not-allowed disabled:opacity-60"
@@ -158,11 +166,11 @@ export default function Home() {
                     <span className="flex items-center justify-between gap-3 font-serif text-xl font-bold">
                       {mode.label}
                       <span className="rounded-full bg-cream-dark px-2.5 py-1 text-xs font-black text-brown-dark/70">
-                        {completed}/{TOTAL_LEVELS}
+                        {completed}/{modeLevels}
                       </span>
                     </span>
                     <span className="block text-sm leading-6 text-brown-dark/65">{mode.description}</span>
-                    <StageProgressGraph progress={progress} compact />
+                    <StageProgressGraph progress={progress} levelCount={modeLevels} compact />
                   </button>
                 );
               })}
@@ -176,13 +184,13 @@ export default function Home() {
             <h2 className="font-serif text-4xl font-extrabold">
               {modeCompletedAll ? "모든 단계를 완료했습니다" : `${startLevel}단계부터 진행`}
             </h2>
-            <p className="text-brown-dark/75">현재까지 {modeCompleted}/{TOTAL_LEVELS}단계 완료</p>
-            <StageProgressGraph progress={modeProgress} />
+            <p className="text-brown-dark/75">현재까지 {modeCompleted}/{levelCount}단계 완료</p>
+            <StageProgressGraph progress={modeProgress} levelCount={levelCount} />
             <div className="flex flex-wrap justify-center gap-3 pt-1">
               <button className="primary-button" disabled={!hydrated} onClick={() => beginLevel(startLevel)}>
                 {modeCompletedAll ? "1단계부터 다시 도전" : `${startLevel}단계 시작`}
               </button>
-              <button className="secondary-button" onClick={restartMode}>
+              <button className="secondary-button" onClick={() => setConfirmRestart(true)}>
                 처음부터 시작
               </button>
             </div>
@@ -192,7 +200,7 @@ export default function Home() {
         {session.screen === "QUESTION" && currentQuestion && (
           <section className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center gap-5 py-8">
             <div className="grid grid-cols-3 gap-2 sm:gap-3">
-              <Status label="단계" value={`${session.level}/${TOTAL_LEVELS}`} />
+              <Status label="단계" value={`${session.level}/${levelCount}`} />
               <Status label="문제" value={`${session.currentIndex + 1}/${QUESTIONS_PER_RUN}`} />
               <Status label="점수" value={`${session.score}점`} />
             </div>
@@ -202,7 +210,7 @@ export default function Home() {
               label={`${session.currentIndex + 1}번째 문제`}
             />
             <div className="rounded-lg border border-gold/30 bg-white/70 p-5 shadow-sm sm:p-7">
-              <p className="mb-3 text-sm font-bold text-gold">{meta.title}</p>
+              <p className="mb-3 text-sm font-bold text-gold">{session.mode === "memory_verse" ? "성경말씀" : meta.title}</p>
               {currentQuestion.type === "image_quiz" && <ImagePrompt question={currentQuestion} />}
               <h2 className="font-serif text-2xl font-bold leading-relaxed sm:text-3xl">{currentQuestion.question}</h2>
             </div>
@@ -216,13 +224,36 @@ export default function Home() {
               session.feedback.correct ? "bg-emerald-700" : "bg-red-700"
             }`}
           >
-            <div className="max-w-xl text-center text-white">
-              <div className="text-[8rem] font-black leading-none sm:text-[12rem]">{session.feedback.correct ? "O" : "X"}</div>
-              <p className="text-2xl font-bold">
-                {session.feedback.correct ? "정답입니다" : `정답: ${session.feedback.answer}`}
-              </p>
-              <p className="mt-3 text-lg font-bold text-white">[{session.feedback.reference}]</p>
-              <p className="mt-3 text-base text-white/85">{session.feedback.explanation}</p>
+            <div className="max-w-2xl text-center text-white">
+              {session.feedback.verse ? (
+                <>
+                  <div className="text-[5rem] font-black leading-none sm:text-[7rem]">X</div>
+                  <p className="text-lg font-bold">[{session.feedback.reference}]</p>
+                  <p className="mt-4 text-left text-lg leading-loose sm:text-xl">
+                    {session.feedback.verse.segments.map((segment, index) => (
+                      <span key={`reveal-${index}`}>
+                        {segment}
+                        {session.feedback?.verse && index < session.feedback.verse.blanks.length && (
+                          <strong className="mx-1 text-2xl font-black text-yellow-200 sm:text-3xl">
+                            {session.feedback.verse.blanks[index]}
+                          </strong>
+                        )}
+                      </span>
+                    ))}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="text-[8rem] font-black leading-none sm:text-[12rem]">
+                    {session.feedback.correct ? "O" : "X"}
+                  </div>
+                  <p className="text-2xl font-bold">
+                    {session.feedback.correct ? "정답입니다" : `정답: ${session.feedback.answer}`}
+                  </p>
+                  <p className="mt-3 text-lg font-bold text-white">[{session.feedback.reference}]</p>
+                  <p className="mt-3 text-base text-white/85">{session.feedback.explanation}</p>
+                </>
+              )}
               <button
                 className="mt-7 rounded-md border border-white/60 bg-white px-5 py-3 text-sm font-bold text-brown-dark shadow-sm transition hover:bg-cream"
                 onClick={skipFeedback}
@@ -242,7 +273,9 @@ export default function Home() {
             <p className="text-brown-dark/75">
               {passed
                 ? "통과 기준을 달성했습니다. 축하 화면으로 이동하세요."
-                : "통과 기준은 7문제입니다. 새 문제로 다시 도전할 수 있습니다."}
+                : failedEarly
+                  ? `${MAX_WRONG_ANSWERS}문제를 틀려 단계에 실패했습니다. 같은 단계를 다시 도전하시겠습니까?`
+                  : "통과 기준은 7문제입니다. 새 문제로 다시 도전할 수 있습니다."}
             </p>
             <button className={passed ? "primary-button" : "secondary-button"} onClick={resolveLevelResult}>
               {passed ? "완료 확인" : "다시 도전"}
@@ -255,17 +288,36 @@ export default function Home() {
             <div className="text-6xl">✦</div>
             <p className="text-sm font-bold text-gold">Level Clear</p>
             <h2 className="font-serif text-4xl font-extrabold">
-              {session.level === TOTAL_LEVELS ? "모든 단계를 완료했습니다" : `${session.level}단계 완료`}
+              {session.level === levelCount ? "모든 단계를 완료했습니다" : `${session.level}단계 완료`}
             </h2>
             <p className="text-brown-dark/75">
-              {session.level === TOTAL_LEVELS
+              {session.level === levelCount
                 ? "구약과 신약을 아우르는 전체 여정을 마쳤습니다."
                 : `${session.level + 1}단계에서 더 깊은 성경 지식을 확인해 보세요.`}
             </p>
             <button className="primary-button" onClick={nextLevel}>
-              {session.level === TOTAL_LEVELS ? "모드 홈으로" : "다음 단계"}
+              {session.level === levelCount ? "모드 홈으로" : "다음 단계"}
             </button>
           </CenteredPanel>
+        )}
+
+        {confirmRestart && (
+          <div className="fixed inset-0 z-30 grid place-items-center bg-black/50 px-6">
+            <div className="w-full max-w-sm space-y-5 rounded-lg border border-gold/30 bg-cream p-7 text-center shadow-lg">
+              <h3 className="font-serif text-2xl font-extrabold">처음부터 시작할까요?</h3>
+              <p className="text-brown-dark/75">
+                {getModeLabel(session.mode)}의 모든 단계 진행 기록이 초기화됩니다.
+              </p>
+              <div className="flex justify-center gap-3">
+                <button className="primary-button" onClick={restartMode}>
+                  예, 초기화
+                </button>
+                <button className="secondary-button" onClick={() => setConfirmRestart(false)}>
+                  아니요
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </main>
@@ -323,10 +375,67 @@ function QuestionAnswerControls({
     return <ImageQuizAnswer question={question} onAnswer={onAnswer} />;
   }
 
+  if (question.type === "memory_verse") {
+    return <MemoryVerseAnswer question={question} onAnswer={onAnswer} />;
+  }
+
   return (
     <div className="rounded-lg border border-gold/25 bg-white/70 p-5 text-center text-sm font-bold text-brown-dark/65">
       이 모드는 다음 릴리스에서 플레이할 수 있습니다.
     </div>
+  );
+}
+
+function MemoryVerseAnswer({
+  question,
+  onAnswer,
+}: {
+  question: Extract<Question, { type: "memory_verse" }>;
+  onAnswer: (answer: SubmittedAnswer) => void;
+}) {
+  const blankCount = question.payload.segments.length - 1;
+  const [values, setValues] = useState<string[]>(() => Array(blankCount).fill(""));
+
+  useEffect(() => {
+    setValues(Array(blankCount).fill(""));
+  }, [question.id, blankCount]);
+
+  function updateValue(index: number, value: string) {
+    setValues((current) => current.map((item, position) => (position === index ? value : item)));
+  }
+
+  const allFilled = values.length === blankCount && values.every((value) => value.trim().length > 0);
+
+  return (
+    <form
+      className="grid gap-4"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!allFilled) return;
+        onAnswer(values);
+      }}
+    >
+      <div className="rounded-lg border border-gold/25 bg-white/75 p-5 text-lg leading-loose shadow-sm sm:text-xl">
+        {question.payload.segments.map((segment, index) => (
+          <span key={`${question.id}-segment-${index}`}>
+            {segment}
+            {index < blankCount && (
+              <input
+                aria-label={`빈칸 ${index + 1}`}
+                className="mx-1 inline-block min-w-24 rounded-md border-b-2 border-gold bg-cream-dark/40 px-2 py-1 text-center text-base font-bold outline-none transition focus:bg-cream-dark sm:text-lg"
+                onChange={(event) => updateValue(index, event.target.value)}
+                placeholder={`${index + 1}`}
+                value={values[index] ?? ""}
+              />
+            )}
+          </span>
+        ))}
+      </div>
+      <p className="text-sm font-bold text-brown-dark/60">괄호 {blankCount}개를 순서대로 채우세요. 띄어쓰기는 채점하지 않습니다.</p>
+      <button className="primary-button w-full" disabled={!allFilled} type="submit">
+        제출
+      </button>
+    </form>
   );
 }
 
@@ -370,45 +479,14 @@ function ImageQuizAnswer({
   question: Extract<Question, { type: "image_quiz" }>;
   onAnswer: (answer: SubmittedAnswer) => void;
 }) {
-  const [value, setValue] = useState("");
-
-  useEffect(() => {
-    setValue("");
-  }, [question.id]);
-
   return (
-    <div className="grid gap-4">
-      {question.payload.choices && (
-        <div className="grid gap-3">
-          {question.payload.choices.map((option, index) => (
-            <button className="answer-button" key={`${question.id}-${option}`} onClick={() => onAnswer(index)} type="button">
-              <span>{String.fromCharCode(65 + index)}</span>
-              {option}
-            </button>
-          ))}
-        </div>
-      )}
-      <form
-        className="grid gap-3 rounded-lg border border-gold/20 bg-white/55 p-4"
-        onSubmit={(event) => {
-          event.preventDefault();
-          onAnswer(value);
-        }}
-      >
-        <label className="text-sm font-black uppercase text-brown-dark/55" htmlFor={`image-answer-${question.id}`}>
-          Type answer
-        </label>
-        <input
-          className="min-h-14 rounded-lg border border-gold/25 bg-white/80 px-4 text-lg font-bold outline-none transition focus:border-gold"
-          id={`image-answer-${question.id}`}
-          onChange={(event) => setValue(event.target.value)}
-          placeholder="Enter the Bible story answer"
-          value={value}
-        />
-        <button className="primary-button w-full" disabled={!value.trim()} type="submit">
-          Submit typed answer
+    <div className="grid gap-3">
+      {question.payload.choices?.map((option, index) => (
+        <button className="answer-button" key={`${question.id}-${option}`} onClick={() => onAnswer(index)} type="button">
+          <span>{String.fromCharCode(65 + index)}</span>
+          {option}
         </button>
-      </form>
+      ))}
     </div>
   );
 }
@@ -466,6 +544,14 @@ function MatchingAnswer({
     return Object.entries(matches).find(([, matchedRight]) => matchedRight === right)?.[0];
   }
 
+  const PAIR_COLORS = [
+    "border-blue-400/60 bg-blue-50",
+    "border-purple-400/60 bg-purple-50",
+    "border-orange-400/60 bg-orange-50",
+    "border-pink-400/60 bg-pink-50",
+    "border-teal-400/60 bg-teal-50",
+  ];
+
   const completedCount = Object.keys(matches).length;
   const canSubmit = completedCount === leftItems.length;
 
@@ -474,9 +560,10 @@ function MatchingAnswer({
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="grid gap-2">
           <p className="text-sm font-black uppercase text-brown-dark/55">Left</p>
-          {leftItems.map((left) => {
+          {leftItems.map((left, index) => {
             const selected = selectedLeft === left;
             const pairedRight = matches[left];
+            const pairColor = PAIR_COLORS[index % PAIR_COLORS.length];
             return (
               <button
                 aria-pressed={selected}
@@ -484,7 +571,7 @@ function MatchingAnswer({
                   selected
                     ? "border-gold bg-gold text-white"
                     : pairedRight
-                      ? "border-emerald-700/35 bg-emerald-50 text-brown-dark"
+                      ? `${pairColor} text-brown-dark`
                       : "border-gold/25 bg-white/75 hover:border-gold hover:bg-white"
                 }`}
                 key={`${question.id}-left-${left}`}
@@ -502,6 +589,8 @@ function MatchingAnswer({
           {rightItems.map((right) => {
             const selected = selectedRight === right;
             const pairedLeft = getRightOwner(right);
+            const pairIndex = pairedLeft ? leftItems.indexOf(pairedLeft) : -1;
+            const pairColor = pairIndex >= 0 ? PAIR_COLORS[pairIndex % PAIR_COLORS.length] : "";
             return (
               <button
                 aria-pressed={selected}
@@ -509,7 +598,7 @@ function MatchingAnswer({
                   selected
                     ? "border-gold bg-gold text-white"
                     : pairedLeft
-                      ? "border-emerald-700/35 bg-emerald-50 text-brown-dark"
+                      ? `${pairColor} text-brown-dark`
                       : "border-gold/25 bg-white/75 hover:border-gold hover:bg-white"
                 }`}
                 key={`${question.id}-right-${right}`}
@@ -596,7 +685,7 @@ function OrderingAnswer({
                 onClick={() => moveItem(index, -1)}
                 type="button"
               >
-                U
+                <svg fill="none" height="20" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" viewBox="0 0 24 24" width="20"><line x1="12" x2="12" y1="19" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
               </button>
               <button
                 aria-label={`Move ${item} down`}
@@ -605,7 +694,7 @@ function OrderingAnswer({
                 onClick={() => moveItem(index, 1)}
                 type="button"
               >
-                D
+                <svg fill="none" height="20" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" viewBox="0 0 24 24" width="20"><line x1="12" x2="12" y1="5" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
               </button>
             </span>
           </li>
@@ -666,18 +755,26 @@ function Status({ label, value }: { label: string; value: string }) {
   );
 }
 
-function StageProgressGraph({ progress, compact = false }: { progress: GameProgress; compact?: boolean }) {
+function StageProgressGraph({
+  progress,
+  levelCount = TOTAL_LEVELS,
+  compact = false,
+}: {
+  progress: GameProgress;
+  levelCount?: number;
+  compact?: boolean;
+}) {
   const completed = progress.completedLevels.length;
-  const label = `단계 진행 ${completed}/${TOTAL_LEVELS}`;
+  const label = `단계 진행 ${completed}/${levelCount}`;
 
   return (
     <div className="w-full space-y-1.5">
       {!compact && <p className="text-xs font-bold uppercase text-brown-dark/55">{label}</p>}
       <div aria-label={label} className="flex gap-1" role="img">
-        {Array.from({ length: TOTAL_LEVELS }, (_, index) => {
+        {Array.from({ length: levelCount }, (_, index) => {
           const level = index + 1;
           const done = progress.completedLevels.includes(level);
-          const current = !done && completed < TOTAL_LEVELS && level === progress.currentLevel;
+          const current = !done && completed < levelCount && level === progress.currentLevel;
           return (
             <span
               className={`h-2.5 flex-1 rounded-full ${done ? "bg-gold" : current ? "bg-gold/40" : "bg-cream-dark"}`}

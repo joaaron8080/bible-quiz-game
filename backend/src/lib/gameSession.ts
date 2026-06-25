@@ -1,9 +1,10 @@
 import {
   QUESTIONS_PER_RUN,
-  TOTAL_LEVELS,
+  MAX_WRONG_ANSWERS,
   DEFAULT_QUIZ_MODE,
   evaluateAnswer,
   getCorrectAnswerText,
+  getModeLevelCount,
   isLevelPassed,
   pickRandomQuestions,
   type GameProgress,
@@ -19,6 +20,10 @@ export type AnswerFeedback = {
   answer: string;
   explanation: string;
   reference: string;
+  verse?: {
+    segments: string[];
+    blanks: string[];
+  };
 };
 
 export type GameSession = {
@@ -28,6 +33,7 @@ export type GameSession = {
   questions: Question[];
   currentIndex: number;
   score: number;
+  wrong: number;
   feedback: AnswerFeedback | null;
 };
 
@@ -43,6 +49,7 @@ export const defaultSession: GameSession = {
   questions: [],
   currentIndex: 0,
   score: 0,
+  wrong: 0,
   feedback: null,
 };
 
@@ -59,7 +66,7 @@ export function selectMode(mode: QuizMode, currentLevel = 1): GameSession {
     ...defaultSession,
     screen: "MODE_HOME",
     mode,
-    level: clampLevel(currentLevel),
+    level: clampLevel(currentLevel, mode),
   };
 }
 
@@ -77,7 +84,7 @@ export function startNextProgressLevelSession(
   random = Math.random,
   mode: QuizMode = DEFAULT_QUIZ_MODE,
 ): GameSession {
-  const completedAll = progress.completedLevels.length === TOTAL_LEVELS;
+  const completedAll = progress.completedLevels.length === getModeLevelCount(mode);
   return startLevelSession(completedAll ? 1 : progress.currentLevel, questionBank, random, mode);
 }
 
@@ -87,7 +94,7 @@ export function startLevelSession(
   random = Math.random,
   mode: QuizMode = DEFAULT_QUIZ_MODE,
 ): GameSession {
-  const safeLevel = clampLevel(level);
+  const safeLevel = clampLevel(level, mode);
 
   return {
     screen: "QUESTION",
@@ -96,6 +103,7 @@ export function startLevelSession(
     questions: pickRandomQuestions(questionBank, safeLevel, QUESTIONS_PER_RUN, random, mode),
     currentIndex: 0,
     score: 0,
+    wrong: 0,
     feedback: null,
   };
 }
@@ -124,17 +132,30 @@ export function answerCurrentQuestion(session: GameSession, submittedAnswer: Sub
       ...session,
       screen: "FEEDBACK",
       score: correct ? session.score + 1 : session.score,
+      wrong: correct ? session.wrong : session.wrong + 1,
       feedback: {
         correct,
         answer: getCorrectAnswerText(currentQuestion),
         explanation: currentQuestion.explanation,
         reference: currentQuestion.reference,
+        verse:
+          currentQuestion.type === "memory_verse"
+            ? { segments: currentQuestion.payload.segments, blanks: currentQuestion.answer.blanks }
+            : undefined,
       },
     },
   };
 }
 
 export function continueAfterFeedback(session: GameSession): GameSession {
+  if (session.wrong >= MAX_WRONG_ANSWERS) {
+    return {
+      ...session,
+      screen: "LEVEL_RESULT",
+      feedback: null,
+    };
+  }
+
   const nextIndex = session.currentIndex + 1;
   if (nextIndex >= QUESTIONS_PER_RUN) {
     return {
@@ -166,6 +187,6 @@ export function getCurrentQuestion(session: GameSession) {
   return session.questions[session.currentIndex];
 }
 
-function clampLevel(level: number) {
-  return Math.min(TOTAL_LEVELS, Math.max(1, level));
+function clampLevel(level: number, mode: QuizMode) {
+  return Math.min(getModeLevelCount(mode), Math.max(1, level));
 }

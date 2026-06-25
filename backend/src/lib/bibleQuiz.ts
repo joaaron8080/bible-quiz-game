@@ -1,4 +1,4 @@
-export const questionTypes = ["multiple_choice", "true_false", "fill_blank", "ordering", "matching", "image_quiz"] as const;
+export const questionTypes = ["multiple_choice", "true_false", "fill_blank", "ordering", "matching", "image_quiz", "memory_verse"] as const;
 
 export type QuestionType = (typeof questionTypes)[number];
 
@@ -36,6 +36,9 @@ export type QuestionPayloadByType = {
     imageAlt: string;
     choices?: [string, string, string, string];
   };
+  memory_verse: {
+    segments: string[];
+  };
 };
 
 export type QuestionAnswerByType = {
@@ -59,6 +62,9 @@ export type QuestionAnswerByType = {
     index?: number;
     text?: string;
   };
+  memory_verse: {
+    blanks: string[];
+  };
 };
 
 export type Question<TType extends QuestionType = QuestionType> = TType extends QuestionType
@@ -75,6 +81,7 @@ export type FillBlankQuestion = Question<"fill_blank">;
 export type OrderingQuestion = Question<"ordering">;
 export type MatchingQuestion = Question<"matching">;
 export type ImageQuizQuestion = Question<"image_quiz">;
+export type MemoryVerseQuestion = Question<"memory_verse">;
 
 export type SubmittedAnswer =
   | number
@@ -91,10 +98,16 @@ export type GameProgress = {
 };
 
 export const TOTAL_LEVELS = 10;
+export const MEMORY_VERSE_LEVELS = 5;
 export const QUESTIONS_PER_RUN = 10;
 export const PASSING_SCORE = 7;
+export const MAX_WRONG_ANSWERS = 3;
 export const STORAGE_KEY = "bible-quiz-progress-v2";
 export const DEFAULT_QUIZ_MODE: QuizMode = "multiple_choice";
+
+export function getModeLevelCount(mode: QuizMode): number {
+  return mode === "memory_verse" ? MEMORY_VERSE_LEVELS : TOTAL_LEVELS;
+}
 
 export const releasedQuizModes: Array<{ id: QuizMode; label: string; description: string }> = [
   {
@@ -126,6 +139,11 @@ export const releasedQuizModes: Array<{ id: QuizMode; label: string; description
     id: "image_quiz",
     label: "Image Quiz",
     description: "그림 단서를 보고 관련 성경 이야기의 정답을 맞혀보세요.",
+  },
+  {
+    id: "memory_verse",
+    label: "Memory Verse",
+    description: "암송 말씀의 괄호를 순서대로 채웁니다. 10문제씩 5단계로 진행합니다.",
   },
 ];
 
@@ -273,6 +291,13 @@ export function evaluateAnswer(question: Question, submitted: SubmittedAnswer) {
           .map(normalizeText)
           .includes(normalizeText(submitted))
       );
+    case "memory_verse":
+      return (
+        Array.isArray(submitted) &&
+        submitted.every((item): item is string => typeof item === "string") &&
+        submitted.length === question.answer.blanks.length &&
+        question.answer.blanks.every((blank, index) => normalizeNoSpace(submitted[index]) === normalizeNoSpace(blank))
+      );
     default:
       return false;
   }
@@ -295,6 +320,8 @@ export function getCorrectAnswerText(question: Question) {
         return question.payload.choices[question.answer.index];
       }
       return question.answer.text ?? "";
+    case "memory_verse":
+      return question.answer.blanks.join(" / ");
     default:
       return "";
   }
@@ -326,6 +353,10 @@ function getQuestionFactId(id: string) {
 
 function normalizeText(value: string) {
   return value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
+}
+
+function normalizeNoSpace(value: string) {
+  return value.replace(/\s+/g, "").toLocaleLowerCase();
 }
 
 function stringsEqual(left: string[], right: string[]) {
@@ -364,34 +395,33 @@ function matchingEqual(submitted: Record<string, string> | Array<{ left: string;
   );
 }
 
-export function completeLevel(progress: GameProgress, level: number): GameProgress {
+export function completeLevel(progress: GameProgress, level: number, levelCount = TOTAL_LEVELS): GameProgress {
   const completedLevels = Array.from(new Set([...progress.completedLevels, level]))
-    .filter((item) => item >= 1 && item <= TOTAL_LEVELS)
+    .filter((item) => item >= 1 && item <= levelCount)
     .sort((a, b) => a - b);
   const highestLevel = Math.max(progress.highestLevel, level);
 
   return {
     completedLevels,
     highestLevel,
-    currentLevel: Math.min(TOTAL_LEVELS, highestLevel + 1),
+    currentLevel: Math.min(levelCount, highestLevel + 1),
   };
 }
 
-export function normalizeProgress(value: unknown): GameProgress {
+export function normalizeProgress(value: unknown, levelCount = TOTAL_LEVELS): GameProgress {
   if (!value || typeof value !== "object") return defaultProgress;
   const candidate = value as Partial<GameProgress>;
   const completedLevels = Array.isArray(candidate.completedLevels)
     ? Array.from(
         new Set(
           candidate.completedLevels
-            .filter((level): level is number => Number.isInteger(level))
-            .map((level) => clampLevel(level, 1)),
+            .filter((level): level is number => Number.isInteger(level) && level >= 1 && level <= levelCount),
         ),
       ).sort((a, b) => a - b)
     : [];
   const inferredHighest = completedLevels.length ? Math.max(...completedLevels) : 0;
-  const highestLevel = Math.max(clampLevel(candidate.highestLevel ?? inferredHighest, 0), inferredHighest);
-  const currentLevel = clampLevel(candidate.currentLevel ?? Math.min(TOTAL_LEVELS, highestLevel + 1), 1);
+  const highestLevel = Math.max(clampLevel(candidate.highestLevel ?? inferredHighest, 0, levelCount), inferredHighest);
+  const currentLevel = clampLevel(candidate.currentLevel ?? Math.min(levelCount, highestLevel + 1), 1, levelCount);
 
   return {
     highestLevel,
@@ -408,7 +438,9 @@ export function normalizeProgressMap(value: unknown): ModeProgressMap {
     progressQuizModes.includes(mode as QuizMode),
   );
 
-  return Object.fromEntries(entries.map(([mode, progress]) => [mode, normalizeProgress(progress)]));
+  return Object.fromEntries(
+    entries.map(([mode, progress]) => [mode, normalizeProgress(progress, getModeLevelCount(mode as QuizMode))]),
+  );
 }
 
 export function loadProgressMap(storage?: Storage): ModeProgressMap {
@@ -427,7 +459,7 @@ export function saveProgressMap(map: ModeProgressMap, storage?: Storage) {
 }
 
 export function getModeProgress(map: ModeProgressMap, mode: QuizMode): GameProgress {
-  return normalizeProgress(map[mode]);
+  return normalizeProgress(map[mode], getModeLevelCount(mode));
 }
 
 export function setModeProgress(map: ModeProgressMap, mode: QuizMode, progress: GameProgress): ModeProgressMap {
@@ -440,6 +472,6 @@ export function resetModeProgress(map: ModeProgressMap, mode: QuizMode): ModePro
   return next;
 }
 
-function clampLevel(level: number, min: number) {
-  return Math.min(TOTAL_LEVELS, Math.max(min, level));
+function clampLevel(level: number, min: number, levelCount = TOTAL_LEVELS) {
+  return Math.min(levelCount, Math.max(min, level));
 }
