@@ -51,6 +51,7 @@ export type QuestionAnswerByType = {
   fill_blank: {
     text: string;
     accepted?: string[];
+    keywords?: (string | string[])[];
   };
   ordering: {
     order: string[];
@@ -112,37 +113,37 @@ export function getModeLevelCount(mode: QuizMode): number {
 export const releasedQuizModes: Array<{ id: QuizMode; label: string; description: string }> = [
   {
     id: "multiple_choice",
-    label: "Multiple Choice",
+    label: "4지선다형",
     description: "4지선다 10문제를 풀고 단계별 진행도를 올립니다.",
   },
   {
     id: "true_false",
-    label: "OX Quiz",
+    label: "OX 퀴즈",
     description: "문장이 맞는지 빠르게 판단합니다.",
   },
   {
     id: "fill_blank",
-    label: "Fill Blank",
+    label: "주관식 퀴즈",
     description: "핵심 답을 직접 입력하며 암송 감각을 익힙니다.",
   },
   {
     id: "ordering",
-    label: "Ordering Quiz",
+    label: "순서 맞추기",
     description: "성경에 나오는 사건들을 올바른 순서대로 배열하세요.",
   },
   {
     id: "matching",
-    label: "Matching Quiz",
+    label: "짝 맞추기",
     description: "성경에 등장하는 인물과 사건을 올바른 쌍으로 연결하세요.",
   },
   {
     id: "image_quiz",
-    label: "Image Quiz",
+    label: "이미지 퀴즈",
     description: "그림 단서를 보고 관련 성경 이야기의 정답을 맞혀보세요.",
   },
   {
     id: "memory_verse",
-    label: "Memory Verse",
+    label: "성경암송 퀴즈",
     description: "암송 말씀의 괄호를 순서대로 채웁니다. 10문제씩 5단계로 진행합니다.",
   },
 ];
@@ -271,11 +272,18 @@ export function evaluateAnswer(question: Question, submitted: SubmittedAnswer) {
       return typeof submitted === "number" && submitted === question.answer.index;
     case "true_false":
       return typeof submitted === "boolean" && submitted === question.answer.value;
-    case "fill_blank":
+    case "fill_blank": {
       if (typeof submitted !== "string") return false;
+      if (question.answer.keywords?.length) {
+        const normalized = normalizeNoSpace(submitted);
+        return question.answer.keywords.every((keyword) =>
+          (Array.isArray(keyword) ? keyword : [keyword]).some((alternative) => normalized.includes(normalizeNoSpace(alternative)))
+        );
+      }
       return [question.answer.text, ...(question.answer.accepted ?? [])]
         .map(normalizeText)
         .includes(normalizeText(submitted));
+    }
     case "ordering":
       return Array.isArray(submitted) && submitted.every((item): item is string => typeof item === "string") && stringsEqual(submitted, question.answer.order);
     case "matching":

@@ -210,7 +210,7 @@ export default function Home() {
               label={`${session.currentIndex + 1}번째 문제`}
             />
             <div className="rounded-lg border border-gold/30 bg-white/70 p-5 shadow-sm sm:p-7">
-              <p className="mb-3 text-sm font-bold text-gold">{session.mode === "memory_verse" ? "성경말씀" : meta.title}</p>
+              <p className="mb-3 text-sm font-bold text-gold">{session.mode === "memory_verse" ? (currentQuestion?.category ?? "성경말씀") : meta.title}</p>
               {currentQuestion.type === "image_quiz" && <ImagePrompt question={currentQuestion} />}
               <h2 className="font-serif text-2xl font-bold leading-relaxed sm:text-3xl">{currentQuestion.question}</h2>
             </div>
