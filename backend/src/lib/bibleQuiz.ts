@@ -99,7 +99,7 @@ export type GameProgress = {
 };
 
 export const TOTAL_LEVELS = 10;
-export const MEMORY_VERSE_LEVELS = 5;
+export const MEMORY_VERSE_LEVELS = 6;
 export const QUESTIONS_PER_RUN = 10;
 export const PASSING_SCORE = 7;
 export const MAX_WRONG_ANSWERS = 3;
@@ -144,7 +144,7 @@ export const releasedQuizModes: Array<{ id: QuizMode; label: string; description
   {
     id: "memory_verse",
     label: "성경암송 퀴즈",
-    description: "암송 말씀의 괄호를 순서대로 채웁니다. 10문제씩 5단계로 진행합니다.",
+    description: "암송 말씀의 괄호를 순서대로 채웁니다. 10문제씩 6단계로 진행합니다.",
   },
 ];
 
@@ -281,8 +281,8 @@ export function evaluateAnswer(question: Question, submitted: SubmittedAnswer) {
         );
       }
       return [question.answer.text, ...(question.answer.accepted ?? [])]
-        .map(normalizeText)
-        .includes(normalizeText(submitted));
+        .map(normalizeNoSpace)
+        .includes(normalizeNoSpace(submitted));
     }
     case "ordering":
       return Array.isArray(submitted) && submitted.every((item): item is string => typeof item === "string") && stringsEqual(submitted, question.answer.order);
