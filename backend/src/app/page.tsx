@@ -10,7 +10,6 @@ import {
   completeLevel,
   getModeLevelCount,
   getModeProgress,
-  levelMeta,
   loadProgressMap,
   releasedQuizModes,
   resetModeProgress,
@@ -34,14 +33,17 @@ import {
 } from "@/lib/gameSession";
 import { questionBank } from "@/lib/questionBank";
 import { preloadSounds, sounds } from "@/lib/sounds";
+import { Leaderboard } from "@/components/Leaderboard";
+import { addTotalScore, getMyNickname, getTotalScore, isSupabaseConfigured, pushScore } from "@/lib/leaderboard";
+import type { GameSession } from "@/lib/gameSession";
 
 export default function Home() {
   const [session, setSession] = useState(defaultSession);
   const [progressMap, setProgressMap] = useState<ModeProgressMap>({});
   const [hydrated, setHydrated] = useState(false);
   const [confirmRestart, setConfirmRestart] = useState(false);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
 
-  const meta = levelMeta[session.level - 1];
   const currentQuestion = getCurrentQuestion(session);
   const passed = isSessionPassed(session);
   const failedEarly = session.wrong >= MAX_WRONG_ANSWERS;
@@ -73,12 +75,30 @@ export default function Home() {
     setSession(startLevelSession(1, questionBank, Math.random, session.mode));
   }
 
+  function recordRunScore(runScore: number) {
+    if (!hydrated) return;
+    const storage = window.localStorage;
+    addTotalScore(runScore, storage);
+    const nickname = getMyNickname(storage);
+    if (nickname) {
+      void pushScore(nickname, getTotalScore(storage));
+    }
+  }
+
+  function advanceAfterFeedback(current: GameSession) {
+    const next = continueAfterFeedback(current);
+    if (next.screen === "LEVEL_RESULT" && current.screen !== "LEVEL_RESULT") {
+      recordRunScore(next.score);
+    }
+    setSession(next);
+  }
+
   function answerQuestion(answer: SubmittedAnswer) {
     const result = answerCurrentQuestion(session, answer);
 
     if (result.correct) {
       sounds.correct();
-      setSession(continueAfterFeedback(result.session));
+      advanceAfterFeedback(result.session);
     } else {
       sounds.wrong();
       setSession(result.session);
@@ -86,7 +106,7 @@ export default function Home() {
   }
 
   function skipFeedback() {
-    setSession(continueAfterFeedback(session));
+    advanceAfterFeedback(session);
   }
 
   function resolveLevelResult() {
@@ -139,7 +159,11 @@ export default function Home() {
           )}
         </header>
 
-        {session.screen === "MODE_SELECT" && (
+        {session.screen === "MODE_SELECT" && showLeaderboard && (
+          <Leaderboard storage={hydrated ? window.localStorage : null} onClose={() => setShowLeaderboard(false)} />
+        )}
+
+        {session.screen === "MODE_SELECT" && !showLeaderboard && (
           <section className="flex-1 space-y-7 py-8">
             <div className="space-y-4">
               <p className="text-sm font-bold uppercase text-gold">Quiz Mode</p>
@@ -174,6 +198,21 @@ export default function Home() {
                   </button>
                 );
               })}
+              <button
+                className="flex flex-col gap-3 rounded-lg border border-gold/40 bg-gold/10 p-5 text-left shadow-sm transition hover:border-gold hover:bg-gold/20"
+                onClick={() => setShowLeaderboard(true)}
+              >
+                <span className="flex items-center justify-between gap-3 font-serif text-xl font-bold">
+                  Leader Board
+                  <span className="rounded-full bg-gold px-2.5 py-1 text-xs font-black text-white">순위</span>
+                </span>
+                <span className="block text-sm leading-6 text-brown-dark/65">
+                  누적 점수로 다른 사람들과 실시간 순위를 겨뤄보세요. 등록은 선택입니다.
+                </span>
+                <span className="mt-auto text-xs font-bold text-gold">
+                  {isSupabaseConfigured ? "실시간 랭킹 보기 →" : "설정 필요"}
+                </span>
+              </button>
             </div>
           </section>
         )}
@@ -210,7 +249,9 @@ export default function Home() {
               label={`${session.currentIndex + 1}번째 문제`}
             />
             <div className="rounded-lg border border-gold/30 bg-white/70 p-5 shadow-sm sm:p-7">
-              <p className="mb-3 text-sm font-bold text-gold">{session.mode === "memory_verse" ? (currentQuestion?.category ?? "성경말씀") : meta.title}</p>
+              {(session.mode === "memory_verse" || session.mode === "fill_blank") && (
+                <p className="mb-3 text-sm font-bold text-gold">{currentQuestion?.category ?? "성경말씀"}</p>
+              )}
               {currentQuestion.type === "image_quiz" && <ImagePrompt question={currentQuestion} />}
               <h2 className="font-serif text-2xl font-bold leading-relaxed sm:text-3xl">{currentQuestion.question}</h2>
             </div>
