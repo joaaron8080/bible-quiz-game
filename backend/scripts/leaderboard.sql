@@ -5,6 +5,9 @@ create table if not exists public.leaderboard (
   updated_at timestamptz not null default now()
 );
 
+alter table public.leaderboard
+  add column if not exists challenge_score integer not null default 0;
+
 alter table public.leaderboard enable row level security;
 
 drop policy if exists "leaderboard read for all" on public.leaderboard;

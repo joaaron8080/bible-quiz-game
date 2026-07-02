@@ -7,9 +7,17 @@ export const NICKNAME_MAX_LENGTH = 20;
 const NICKNAME_KEY = "bible-quiz-nickname-v1";
 const TOTAL_SCORE_KEY = "bible-quiz-total-score-v1";
 
+export type BoardKind = "total" | "challenge";
+
+const BOARD_SCORE_COLUMN: Record<BoardKind, "score" | "challenge_score"> = {
+  total: "score",
+  challenge: "challenge_score",
+};
+
 export type LeaderboardEntry = {
   nickname: string;
   score: number;
+  challenge_score: number;
   updated_at: string;
 };
 
@@ -79,16 +87,43 @@ export async function pushScore(nickname: string, score: number): Promise<void> 
     .eq("nickname", nickname);
 }
 
-export async function fetchLeaderboardPage(page: number): Promise<LeaderboardPage> {
+export async function pushChallengeScore(nickname: string, score: number): Promise<void> {
+  if (!supabase) return;
+
+  const { data, error } = await supabase
+    .from(LEADERBOARD_TABLE)
+    .select("challenge_score")
+    .eq("nickname", nickname)
+    .maybeSingle();
+
+  if (error || !data) return;
+
+  const current = (data as { challenge_score: number }).challenge_score ?? 0;
+  if (score <= current) return;
+
+  await supabase
+    .from(LEADERBOARD_TABLE)
+    .update({ challenge_score: score, updated_at: new Date().toISOString() })
+    .eq("nickname", nickname);
+}
+
+export async function fetchLeaderboardPage(page: number, board: BoardKind = "total"): Promise<LeaderboardPage> {
   if (!supabase) return { entries: [], total: 0 };
 
+  const column = BOARD_SCORE_COLUMN[board];
   const from = page * LEADERBOARD_PAGE_SIZE;
   const to = from + LEADERBOARD_PAGE_SIZE - 1;
 
-  const { data, count, error } = await supabase
+  let query = supabase
     .from(LEADERBOARD_TABLE)
-    .select("nickname, score, updated_at", { count: "exact" })
-    .order("score", { ascending: false })
+    .select("nickname, score, challenge_score, updated_at", { count: "exact" });
+
+  if (board === "challenge") {
+    query = query.gt(column, 0);
+  }
+
+  const { data, count, error } = await query
+    .order(column, { ascending: false })
     .order("updated_at", { ascending: true })
     .range(from, to);
 
@@ -97,22 +132,25 @@ export async function fetchLeaderboardPage(page: number): Promise<LeaderboardPag
   return { entries: data as LeaderboardEntry[], total: count ?? 0 };
 }
 
-export async function fetchMyRank(nickname: string): Promise<{ rank: number; score: number } | null> {
+export async function fetchMyRank(nickname: string, board: BoardKind = "total"): Promise<{ rank: number; score: number } | null> {
   if (!supabase) return null;
 
+  const column = BOARD_SCORE_COLUMN[board];
   const { data, error } = await supabase
     .from(LEADERBOARD_TABLE)
-    .select("score")
+    .select("score, challenge_score")
     .eq("nickname", nickname)
     .maybeSingle();
 
   if (error || !data) return null;
 
-  const myScore = (data as { score: number }).score;
+  const myScore = (data as { score: number; challenge_score: number })[column] ?? 0;
+  if (board === "challenge" && myScore <= 0) return null;
+
   const { count } = await supabase
     .from(LEADERBOARD_TABLE)
     .select("nickname", { count: "exact", head: true })
-    .gt("score", myScore);
+    .gt(column, myScore);
 
   return { rank: (count ?? 0) + 1, score: myScore };
 }

@@ -14,10 +14,16 @@ import {
   registerNickname,
   setMyNickname,
   subscribeLeaderboard,
+  type BoardKind,
   type LeaderboardEntry,
 } from "@/lib/leaderboard";
 
 type RegisterStep = "ask" | "input" | "done";
+
+const BOARD_TITLES: Record<BoardKind, string> = {
+  total: "실시간 순위",
+  challenge: "챌린지 순위",
+};
 
 export function Leaderboard({ storage, onClose }: { storage: Storage | null; onClose: () => void }) {
   const [nickname, setNickname] = useState<string | null>(null);
@@ -25,7 +31,9 @@ export function Leaderboard({ storage, onClose }: { storage: Storage | null; onC
   const [nicknameInput, setNicknameInput] = useState("");
   const [registerError, setRegisterError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [confirmingUnregister, setConfirmingUnregister] = useState(false);
 
+  const [board, setBoard] = useState<BoardKind>("total");
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -35,20 +43,20 @@ export function Leaderboard({ storage, onClose }: { storage: Storage | null; onC
   const totalScore = getTotalScore(storage ?? undefined);
   const totalPages = Math.max(1, Math.ceil(total / LEADERBOARD_PAGE_SIZE));
 
-  const loadPage = useCallback(async (targetPage: number) => {
+  const loadPage = useCallback(async (targetPage: number, targetBoard: BoardKind) => {
     setLoading(true);
-    const result = await fetchLeaderboardPage(targetPage);
+    const result = await fetchLeaderboardPage(targetPage, targetBoard);
     setEntries(result.entries);
     setTotal(result.total);
     setLoading(false);
   }, []);
 
-  const refreshMyRank = useCallback(async (name: string | null) => {
+  const refreshMyRank = useCallback(async (name: string | null, targetBoard: BoardKind) => {
     if (!name) {
       setMyRank(null);
       return;
     }
-    setMyRank(await fetchMyRank(name));
+    setMyRank(await fetchMyRank(name, targetBoard));
   }, []);
 
   useEffect(() => {
@@ -58,21 +66,27 @@ export function Leaderboard({ storage, onClose }: { storage: Storage | null; onC
   }, [storage]);
 
   useEffect(() => {
-    loadPage(page);
-  }, [page, loadPage]);
+    loadPage(page, board);
+  }, [page, board, loadPage]);
 
   useEffect(() => {
-    refreshMyRank(nickname);
-  }, [nickname, refreshMyRank]);
+    refreshMyRank(nickname, board);
+  }, [nickname, board, refreshMyRank]);
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
     const unsubscribe = subscribeLeaderboard(() => {
-      loadPage(page);
-      refreshMyRank(nickname);
+      loadPage(page, board);
+      refreshMyRank(nickname, board);
     });
     return unsubscribe;
-  }, [page, nickname, loadPage, refreshMyRank]);
+  }, [page, board, nickname, loadPage, refreshMyRank]);
+
+  function switchBoard(next: BoardKind) {
+    if (next === board) return;
+    setBoard(next);
+    setPage(0);
+  }
 
   async function submitRegistration() {
     const clean = normalizeNickname(nicknameInput);
@@ -94,7 +108,7 @@ export function Leaderboard({ storage, onClose }: { storage: Storage | null; onC
     setMyNickname(clean, storage ?? undefined);
     setNickname(clean);
     setRegisterStep("done");
-    loadPage(page);
+    loadPage(page, board);
   }
 
   function unregister() {
@@ -102,6 +116,7 @@ export function Leaderboard({ storage, onClose }: { storage: Storage | null; onC
     setNickname(null);
     setRegisterStep("ask");
     setMyRank(null);
+    setConfirmingUnregister(false);
   }
 
   return (
@@ -109,11 +124,27 @@ export function Leaderboard({ storage, onClose }: { storage: Storage | null; onC
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-1">
           <p className="text-sm font-bold uppercase text-gold">Leader Board</p>
-          <h1 className="font-serif text-4xl font-extrabold">실시간 순위</h1>
+          <h1 className="font-serif text-4xl font-extrabold">{BOARD_TITLES[board]}</h1>
         </div>
         <button className="secondary-button" onClick={onClose}>
           모드 선택으로
         </button>
+      </div>
+
+      <div className="flex gap-2">
+        {(Object.keys(BOARD_TITLES) as BoardKind[]).map((kind) => (
+          <button
+            className={`rounded-md border px-4 py-2 text-sm font-bold transition ${
+              board === kind
+                ? "border-gold bg-gold text-white"
+                : "border-gold/30 bg-white/55 text-brown-dark hover:border-gold hover:bg-white"
+            }`}
+            key={kind}
+            onClick={() => switchBoard(kind)}
+          >
+            {BOARD_TITLES[kind]}
+          </button>
+        ))}
       </div>
 
       {!isSupabaseConfigured && (
@@ -167,17 +198,33 @@ export function Leaderboard({ storage, onClose }: { storage: Storage | null; onC
       )}
 
       {isSupabaseConfigured && registerStep === "done" && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gold/25 bg-white/55 px-5 py-4">
+        <div className="rounded-lg border border-gold/25 bg-white/55 px-5 py-4">
           {nickname ? (
-            <>
-              <p className="text-sm font-bold">
-                <span className="text-gold">{nickname}</span> 님 · 내 순위{" "}
-                {myRank ? `${myRank.rank}위 (${myRank.score}점)` : "집계 중"}
-              </p>
-              <button className="text-sm font-bold text-brown-dark/60 underline" onClick={unregister}>
-                등록 해제
-              </button>
-            </>
+            confirmingUnregister ? (
+              <div className="space-y-3">
+                <p className="text-sm font-bold text-brown-dark/80">
+                  점수가 더이상 순위에 반영되지 않습니다. 해제 하시겠습니까?
+                </p>
+                <div className="flex gap-3">
+                  <button className="primary-button" onClick={unregister}>
+                    해제
+                  </button>
+                  <button className="secondary-button" onClick={() => setConfirmingUnregister(false)}>
+                    취소
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm font-bold">
+                  <span className="text-gold">{nickname}</span> 님 · 내 순위{" "}
+                  {myRank ? `${myRank.rank}위 (${myRank.score}점)` : board === "challenge" ? "기록 없음" : "집계 중"}
+                </p>
+                <button className="text-sm font-bold text-brown-dark/60 underline" onClick={() => setConfirmingUnregister(true)}>
+                  등록 해제
+                </button>
+              </div>
+            )
           ) : (
             <>
               <p className="text-sm font-bold text-brown-dark/70">읽기 전용 모드입니다.</p>
@@ -198,7 +245,9 @@ export function Leaderboard({ storage, onClose }: { storage: Storage | null; onC
         {loading ? (
           <p className="px-4 py-8 text-center text-sm font-bold text-brown-dark/55">불러오는 중...</p>
         ) : entries.length === 0 ? (
-          <p className="px-4 py-8 text-center text-sm font-bold text-brown-dark/55">아직 등록된 점수가 없습니다.</p>
+          <p className="px-4 py-8 text-center text-sm font-bold text-brown-dark/55">
+            {board === "challenge" ? "아직 챌린지 기록이 없습니다." : "아직 등록된 점수가 없습니다."}
+          </p>
         ) : (
           entries.map((entry, index) => {
             const rank = page * LEADERBOARD_PAGE_SIZE + index + 1;
@@ -215,7 +264,7 @@ export function Leaderboard({ storage, onClose }: { storage: Storage | null; onC
                   {entry.nickname}
                   {isMe && <span className="ml-2 text-xs text-gold">(나)</span>}
                 </span>
-                <span className="text-right">{entry.score}점</span>
+                <span className="text-right">{board === "challenge" ? entry.challenge_score : entry.score}점</span>
               </div>
             );
           })
